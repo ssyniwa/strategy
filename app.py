@@ -1,79 +1,128 @@
 import streamlit as st
 import numpy as np
 
-st.set_page_config(page_title="戦略陣地取り", layout="wide")
+# --- ページ設定 ---
+st.set_page_config(page_title="本格戦略陣地取り", layout="wide")
 
-# --- 設定 ---
+# --- 定数設定 ---
 MAP_SIZE = 5
-INITIAL_ATTACK = 10  # 1回クリックで送り込む部隊の基本攻撃力
+INCOME_PER_TERRITORY = 100
 
-# --- セッション状態（データ保持） ---
+# ユニットデータ (名前: [必要資金, 攻撃力, 防御力])
+UNITS = {
+    "剣士団": {"cost": 100, "atk": 100, "def": 100, "icon": "⚔️"},
+    "槍兵団": {"cost": 200, "atk": 200, "def": 100, "icon": "🔱"},
+    "騎兵団": {"cost": 400, "atk": 400, "def": 400, "icon": "🐎"},
+    "銃兵団": {"cost": 600, "atk": 600, "def": 400, "icon": "🔫"},
+    "砲兵団": {"cost": 800, "atk": 800, "def": 800, "icon": "💣"},
+}
+
+# --- セッション状態の初期化 ---
 if 'owner' not in st.session_state:
-    # 0: 空き地, 1: プレイヤーA, 2: プレイヤーB
     st.session_state.owner = np.zeros((MAP_SIZE, MAP_SIZE), dtype=int)
-    # 各マスの現在の防御力（戦力）
-    st.session_state.power = np.zeros((MAP_SIZE, MAP_SIZE), dtype=int)
+    st.session_state.defense = np.zeros((MAP_SIZE, MAP_SIZE), dtype=int)
+    st.session_state.money = {1: 0, 2: 0}
     st.session_state.turn = 1
+    st.session_state.phase = "EXPANSION"  # EXPANSION (拡大) or BATTLE (戦闘)
 
-def handle_click(r, c):
-    current_turn = st.session_state.turn
-    current_owner = st.session_state.owner[r, c]
-    current_power = st.session_state.power[r, c]
-
-    # 1. 自分の陣地、または空き地の場合：戦力を増強
-    if current_owner == 0 or current_owner == current_turn:
-        st.session_state.owner[r, c] = current_turn
-        st.session_state.power[r, c] += INITIAL_ATTACK
-        next_turn()
+# --- ヘルパー関数 ---
+def next_turn():
+    # 全てのマスが埋まったかチェック
+    if np.all(st.session_state.owner != 0) and st.session_state.phase == "EXPANSION":
+        st.session_state.phase = "BATTLE"
+        st.toast("全てのマップが埋まりました！戦闘フェーズ開始！")
     
-    # 2. 相手の陣地の場合：攻撃を仕掛ける
-    else:
-        if INITIAL_ATTACK > current_power:
-            # 相手の戦力を上回ったので奪取成功
-            st.session_state.owner[r, c] = current_turn
-            st.session_state.power[r, c] = INITIAL_ATTACK - current_power
-            st.success(f"地点 ({r}, {c}) を奪取しました！")
+    # ターン交代
+    st.session_state.turn = 2 if st.session_state.turn == 1 else 1
+    
+    # 戦闘フェーズなら、ターン開始時に資金追加
+    if st.session_state.phase == "BATTLE":
+        territory_count = np.sum(st.session_state.owner == st.session_state.turn)
+        income = territory_count * INCOME_PER_TERRITORY
+        st.session_state.money[st.session_state.turn] += income
+
+def handle_click(r, c, selected_unit_name=None):
+    p = st.session_state.turn
+    target_owner = st.session_state.owner[r, c]
+    target_def = st.session_state.defense[r, c]
+
+    # 【拡大フェーズ】空き地を埋める
+    if st.session_state.phase == "EXPANSION":
+        if target_owner == 0:
+            st.session_state.owner[r, c] = p
+            st.session_state.defense[r, c] = 100 # 初期防御力
             next_turn()
         else:
-            # 相手の戦力が高いので、戦力を削るだけで終了
-            st.session_state.power[r, c] -= INITIAL_ATTACK
-            st.error(f"攻撃失敗！相手の戦力を {INITIAL_ATTACK} 削りました。")
-            next_turn()
+            st.error("空き地を選んでください")
 
-def next_turn():
-    st.session_state.turn = 2 if st.session_state.turn == 1 else 1
+    # 【戦闘フェーズ】ユニットを選んで攻撃
+    elif st.session_state.phase == "BATTLE":
+        unit = UNITS[selected_unit_name]
+        
+        if st.session_state.money[p] < unit["cost"]:
+            st.error("資金が足りません！")
+            return
 
-# --- 画面UI ---
-st.title("⚔️ 陣地奪取タクティクス")
-st.sidebar.info(f"あなたの攻撃力: **{INITIAL_ATTACK}**")
-st.sidebar.write(f"現在のターン: **{'プレイヤーA (🔵)' if st.session_state.turn == 1 else 'プレイヤーB (🔴)'}**")
+        # 資金消費
+        st.session_state.money[p] -= unit["cost"]
 
-# CSSでボタンと文字の見た目を調整
-st.markdown("""
-<style>
-    .stButton>button { height: 80px; width: 100%; border-radius: 5px; font-weight: bold; }
-    .power-label { font-size: 12px; color: #555; }
-</style>
-""", unsafe_allow_html=True)
+        if target_owner == p:
+            # 自陣なら防御力アップ（補給）
+            st.session_state.defense[r, c] += unit["def"]
+            st.success(f"{selected_unit_name}を配置！防御力が {unit['def']} 上昇。")
+        else:
+            # 敵陣なら攻撃
+            if unit["atk"] > target_def:
+                st.session_state.owner[r, c] = p
+                st.session_state.defense[r, c] = unit["atk"] - target_def
+                st.success(f"奪取成功！ {selected_unit_name}が占領しました。")
+            else:
+                st.session_state.defense[r, c] -= unit["atk"]
+                st.warning(f"攻撃失敗！敵の防御力を {unit['atk']} 削りました。")
+        
+        next_turn()
 
-# グリッド描画
+# --- UI構築 ---
+st.title("⚔️ 戦略陣地取り Web App")
+
+# ステータス表示
+c1, c2, c3 = st.columns(3)
+with c1:
+    st.metric("ターン", "プレイヤーA (🔵)" if st.session_state.turn == 1 else "プレイヤーB (🔴)")
+with c2:
+    phase_name = "空き地拡大期" if st.session_state.phase == "EXPANSION" else "総力戦期"
+    st.metric("フェーズ", phase_name)
+with c3:
+    m = st.session_state.money[st.session_state.turn]
+    st.metric("所持資金", f"${m}")
+
+# ユニット選択（戦闘フェーズのみ）
+selected_unit = None
+if st.session_state.phase == "BATTLE":
+    st.write("### 派遣する部隊を選択してください")
+    cols_unit = st.columns(len(UNITS))
+    unit_names = list(UNITS.keys())
+    # ラジオボタンでユニットを選択
+    selected_unit = st.radio("部隊選択:", unit_names, horizontal=True)
+    u_info = UNITS[selected_unit]
+    st.info(f"選択中: {selected_unit} (コスト:{u_info['cost']} / 攻撃:{u_info['atk']} / 防御:{u_info['def']})")
+
+# マップ描画
+st.write("### マップ")
 for r in range(MAP_SIZE):
     cols = st.columns(MAP_SIZE)
     for c in range(MAP_SIZE):
         owner = st.session_state.owner[r, c]
-        power = st.session_state.power[r, c]
+        df = st.session_state.defense[r, c]
         
-        # 見た目の設定
-        color = "⚪"
-        if owner == 1: color = "🔵"
-        if owner == 2: color = "🔴"
+        icon = "⬜"
+        if owner == 1: icon = "🔵"
+        if owner == 2: icon = "🔴"
         
-        button_label = f"{color}\n({power})" if power > 0 else "－"
-        
-        # ボタン配置
-        cols[c].button(button_label, key=f"cell-{r}-{c}", on_click=handle_click, args=(r, c))
+        label = f"{icon}\n({df})" if df > 0 else icon
+        cols[c].button(label, key=f"btn-{r}-{c}", on_click=handle_click, args=(r, c, selected_unit))
 
-if st.button("ゲームリセット"):
-    for key in list(st.session_state.keys()):
-        del st.session_state[key]
+# リセット
+if st.sidebar.button("ゲームリセット"):
+    for key in list(st.session_state.keys()): del st.session_state[key]
     st.rerun()
