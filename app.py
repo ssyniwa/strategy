@@ -1,11 +1,8 @@
 import streamlit as st
 import numpy as np
 
-# --- 1. 定数・設定 ---
+# --- 1. 設定 ---
 MAP_SIZE = 5
-COST_DEFENSE_UP = 50
-DEFENSE_UP_AMOUNT = 100
-
 UNITS = {
     "剣士団": {"cost": 100, "atk": 100, "icon": "⚔️"},
     "槍兵団": {"cost": 200, "atk": 200, "icon": "🔱"},
@@ -14,8 +11,8 @@ UNITS = {
     "砲兵団": {"cost": 800, "atk": 800, "icon": "💣"},
 }
 
-# --- 2. セッション状態の初期化 ---
-if 'phase' not in st.session_state:
+# --- 2. 初期化 ---
+if 'owner' not in st.session_state:
     st.session_state.phase = "1_EXPANSION"
     st.session_state.turn = 1
     st.session_state.owner = np.zeros((MAP_SIZE, MAP_SIZE), dtype=int)
@@ -29,7 +26,7 @@ if 'phase' not in st.session_state:
     st.session_state.moved_units = []
     st.session_state.winner = None
 
-# --- 3. ロジック関数 ---
+# --- 3. ロジック (handle_battle, on_cell_click は変更なし) ---
 def handle_battle(start_pos, end_pos):
     atk_p = st.session_state.turn
     def_p = 3 - atk_p
@@ -72,9 +69,9 @@ def on_cell_click(r, c, mode=None, unit_name=None):
                     st.session_state.money[p] -= u_data["cost"]
                     st.session_state.units[(r,c)] = u_data.copy()
             elif mode == "防御増強":
-                if st.session_state.money[p] >= COST_DEFENSE_UP:
-                    st.session_state.money[p] -= COST_DEFENSE_UP
-                    st.session_state.defense[r,c] += DEFENSE_UP_AMOUNT
+                if st.session_state.money[p] >= 50:
+                    st.session_state.money[p] -= 50
+                    st.session_state.defense[r,c] += 100
     elif st.session_state.phase == "3_INVASION":
         if (r, c) in st.session_state.moved_units: return
         if st.session_state.selected_pos is None:
@@ -91,104 +88,86 @@ def on_cell_click(r, c, mode=None, unit_name=None):
                 else: handle_battle(start_pos, (r,c))
             st.session_state.selected_pos = None
 
-# --- 4. スタイル定義 ---
-def get_cell_colors(r, c):
-    owner = st.session_state.owner[r,c]
-    def_val = st.session_state.defense[r,c]
-    eco_val = st.session_state.economy[r,c]
-    
-    # 地形
-    if def_val > 160: icon, terrain_c = "⛰️", "#7D7D7D"
-    elif eco_val > 35: icon, terrain_c = "🌾", "#F1C40F"
-    else: icon, terrain_c = "🌲", "#27AE60"
-
-    # 色の決定
-    if owner == 1: bg, border = "#3498DB", "#005599"
-    elif owner == 2: bg, border = "#E74C3C", "#990000"
-    else: bg, border = "#DDDDDD", "#AAAAAA" # 未占領は少し濃いグレーに変更
-
-    if st.session_state.selected_pos == (r,c): bg = "#FFFF00"; border = "#FFD700"
-    elif (r,c) in st.session_state.moved_units and st.session_state.phase == "3_INVASION": bg = "#444444"
-
-    return icon, bg, border
-
-# --- 5. UI構築 ---
-st.set_page_config(layout="wide")
-st.title("🛡️ 領土奪取タクティクス")
-
-# 全体CSS
+# --- 4. CSS: ラベルのテキストに基づいて色を変える魔法の指定 ---
 st.markdown("""
 <style>
+    /* 基本スタイル */
     .stButton > button {
-        width: 100% !important;
-        height: 120px !important;
-        white-space: pre-wrap !important;
-        font-weight: bold !important;
-        font-size: 14px !important;
-        border-radius: 4px !important;
+        width: 100% !important; height: 110px !important;
+        border-radius: 8px !important; font-weight: bold !important;
+        transition: none !important; /* アニメーションを切ることで即時反映 */
     }
-    .stButton > button p {
-        color: white !important;
-        text-shadow: 1px 1px 2px black !important;
-    }
+    .stButton > button p { color: white !important; text-shadow: 1px 1px 2px black !important; font-size: 14px !important; }
+
+    /* 所有者による色分け (ラベル内の [P1], [P2] などの文字列に反応させる) */
+    div[data-testid="stVerticalBlock"]:has(button p:contains("[P1]")) button { background-color: #3498DB !important; border: 3px solid #005599 !important; }
+    div[data-testid="stVerticalBlock"]:has(button p:contains("[P2]")) button { background-color: #E74C3C !important; border: 3px solid #990000 !important; }
+    div[data-testid="stVerticalBlock"]:has(button p:contains("[--]")) button { background-color: #7D7D7D !important; border: 1px solid #444 !important; }
+    
+    /* 選択中・行動済み (優先順位を上げる) */
+    div[data-testid="stVerticalBlock"]:has(button p:contains("[SEL]")) button { background-color: #F1C40F !important; border: 3px solid #FFD700 !important; }
+    div[data-testid="stVerticalBlock"]:has(button p:contains("[MOV]")) button { background-color: #444444 !important; }
 </style>
 """, unsafe_allow_html=True)
 
-if st.session_state.winner:
-    st.balloons(); st.success(f"🎊 PLAYER {st.session_state.winner} の勝利！"); st.stop()
+# --- 5. メイン描画 ---
+st.title("🛡️ タクティカル・カラー・マップ")
 
-# サイドバー
+# 勝利処理
+if st.session_state.winner:
+    st.balloons(); st.success(f"PLAYER {st.session_state.winner} WIN!"); st.stop()
+
+# サイドバー (省略せず全て記述)
 p = st.session_state.turn
-st.sidebar.title(f"Turn: P{'A 🔵' if p==1 else 'B 🔴'}")
-st.sidebar.metric("所持金", f"${st.session_state.money[p]}")
+st.sidebar.header(f"Turn: P{'A 🔵' if p==1 else 'B 🔴'}")
+st.sidebar.metric("資金", f"${st.session_state.money[p]}")
 
 mode, selected_u = None, None
-# ... (サイドバーのフェーズ管理ロジックは前回同様のため、ボタン色の反映を優先して描画へ) ...
-if st.session_state.phase == "2_PLACEMENT":
+if st.session_state.phase == "1_EXPANSION":
+    st.sidebar.info("拡大フェーズ: 土地を占領せよ")
+elif st.session_state.phase == "2_PLACEMENT":
     mode = st.sidebar.radio("コマンド", ["部隊配置", "防御増強"])
-    if mode == "部隊配置": selected_u = st.sidebar.selectbox("ユニット", list(UNITS.keys()))
-    if st.sidebar.button("配置を終了"):
+    if mode == "部隊配置": selected_u = st.sidebar.selectbox("派遣", list(UNITS.keys()))
+    if st.sidebar.button("配置完了"):
         st.session_state.turn = 2 if st.session_state.turn == 1 else 1
         if st.session_state.turn == 1: st.session_state.phase = "3_INVASION"; st.session_state.moved_units = []
         st.rerun()
 elif st.session_state.phase == "3_INVASION":
-    if st.sidebar.button("進軍を終了"):
+    if st.sidebar.button("進軍完了"):
         st.session_state.turn = 2 if st.session_state.turn == 1 else 1
         if st.session_state.turn == 1: st.session_state.phase = "5_RESULT"
         st.rerun()
 elif st.session_state.phase == "5_RESULT":
-    if st.sidebar.button("資金回収して次のターンへ"):
+    if st.sidebar.button("次ターンへ"):
         for i in [1, 2]: st.session_state.money[i] += np.sum(st.session_state.economy[st.session_state.owner == i])
         st.session_state.turn = 1; st.session_state.battle_reports = []; st.session_state.phase = "2_PLACEMENT"
         st.rerun()
 
-# --- マップ描画 ---
+# マップ描画
 for r in range(MAP_SIZE):
     cols = st.columns(MAP_SIZE)
     for c in range(MAP_SIZE):
+        owner = st.session_state.owner[r,c]
         unit = st.session_state.units.get((r,c))
         def_v, eco_v = st.session_state.defense[r,c], st.session_state.economy[r,c]
-        icon, bg, border = get_cell_colors(r, c)
         
+        # 内部的な状態識別タグ（これがCSSに反応する）
+        tag = "[--]"
+        if owner == 1: tag = "[P1]"
+        if owner == 2: tag = "[P2]"
+        if st.session_state.selected_pos == (r,c): tag = "[SEL]"
+        elif (r,c) in st.session_state.moved_units and st.session_state.phase == "3_INVASION": tag = "[MOV]"
+
+        # 地形アイコン
+        t_icon = "⛰️" if def_v > 160 else "🌾" if eco_v > 35 else "🌲"
         cap = "🏰" if (r,c) in st.session_state.capitals.values() else ""
         u_icon = unit["icon"] if unit else ""
-        label = f"{icon}{cap}\n🛡️{def_v} 💰{eco_v}\n{u_icon}"
         
-        # ポイント: セルの状態（bgの色）をキーに含めることでCSSの再適用を強制する
-        # これにより、色が変化した瞬間にStreamlitが新しいスタイルのボタンを描画します
-        cell_key = f"cell_{r}_{c}_{bg.replace('#', '')}"
-
-        st.markdown(f"""
-            <style>
-            div[data-testid="column"]:nth-child({c+1}) button[key="{cell_key}"] {{
-                background-color: {bg} !important;
-                border: 3px solid {border} !important;
-            }}
-            </style>
-        """, unsafe_allow_html=True)
+        # ラベルの構築 (tagは見えないようにするか、デザインの一部にする)
+        label = f"{t_icon}{cap}{tag}\n🛡️{def_v} 💰{eco_v}\n{u_icon}"
         
-        cols[c].button(label, key=cell_key, on_click=on_cell_click, args=(r,c, mode, selected_u))
+        cols[c].button(label, key=f"bt_{r}_{c}", on_click=on_cell_click, args=(r,c, mode, selected_u))
 
 if st.session_state.battle_reports:
-    with st.expander("📝 記録"):
-        for msg in st.session_state.battle_reports: st.write(msg)
+    with st.expander("ログ"):
+        for m in st.session_state.battle_reports: st.write(m)
