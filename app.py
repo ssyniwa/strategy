@@ -91,25 +91,24 @@ def on_cell_click(r, c, mode=None, unit_name=None):
                 else: handle_battle(start_pos, (r,c))
             st.session_state.selected_pos = None
 
-# --- 4. スタイル計算ロジック ---
+# --- 4. スタイル定義 ---
 def get_cell_colors(r, c):
     owner = st.session_state.owner[r,c]
     def_val = st.session_state.defense[r,c]
     eco_val = st.session_state.economy[r,c]
     
-    # 地形デフォルト
+    # 地形
     if def_val > 160: icon, terrain_c = "⛰️", "#7D7D7D"
     elif eco_val > 35: icon, terrain_c = "🌾", "#F1C40F"
     else: icon, terrain_c = "🌲", "#27AE60"
 
     # 色の決定
-    if owner == 1: bg, border = "#3498DB", "#005599" # 青
-    elif owner == 2: bg, border = "#E74C3C", "#990000" # 赤
-    else: bg, border = "#EEEEEE", "#CCCCCC" # 未占領（グレー）
+    if owner == 1: bg, border = "#3498DB", "#005599"
+    elif owner == 2: bg, border = "#E74C3C", "#990000"
+    else: bg, border = "#DDDDDD", "#AAAAAA" # 未占領は少し濃いグレーに変更
 
-    # 特殊状態
     if st.session_state.selected_pos == (r,c): bg = "#FFFF00"; border = "#FFD700"
-    elif (r,c) in st.session_state.moved_units and st.session_state.phase == "3_INVASION": bg = "#555555"
+    elif (r,c) in st.session_state.moved_units and st.session_state.phase == "3_INVASION": bg = "#444444"
 
     return icon, bg, border
 
@@ -117,23 +116,20 @@ def get_cell_colors(r, c):
 st.set_page_config(layout="wide")
 st.title("🛡️ 領土奪取タクティクス")
 
-# 強力なCSS強制適用
+# 全体CSS
 st.markdown("""
 <style>
-    /* 全ボタン共通 */
     .stButton > button {
         width: 100% !important;
         height: 120px !important;
         white-space: pre-wrap !important;
         font-weight: bold !important;
         font-size: 14px !important;
-        transition: all 0.2s ease;
-        border-radius: 8px !important;
+        border-radius: 4px !important;
     }
-    /* テキストが見やすいように影をつける */
-    .stButton > button div p {
+    .stButton > button p {
         color: white !important;
-        text-shadow: 1px 1px 3px black !important;
+        text-shadow: 1px 1px 2px black !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -147,15 +143,13 @@ st.sidebar.title(f"Turn: P{'A 🔵' if p==1 else 'B 🔴'}")
 st.sidebar.metric("所持金", f"${st.session_state.money[p]}")
 
 mode, selected_u = None, None
-if st.session_state.phase == "1_EXPANSION":
-    st.sidebar.info("拡大フェーズ: 土地をクリックして占領してください。")
-elif st.session_state.phase == "2_PLACEMENT":
+# ... (サイドバーのフェーズ管理ロジックは前回同様のため、ボタン色の反映を優先して描画へ) ...
+if st.session_state.phase == "2_PLACEMENT":
     mode = st.sidebar.radio("コマンド", ["部隊配置", "防御増強"])
     if mode == "部隊配置": selected_u = st.sidebar.selectbox("ユニット", list(UNITS.keys()))
     if st.sidebar.button("配置を終了"):
         st.session_state.turn = 2 if st.session_state.turn == 1 else 1
-        if st.session_state.turn == 1: 
-            st.session_state.phase = "3_INVASION"; st.session_state.moved_units = []
+        if st.session_state.turn == 1: st.session_state.phase = "3_INVASION"; st.session_state.moved_units = []
         st.rerun()
 elif st.session_state.phase == "3_INVASION":
     if st.sidebar.button("進軍を終了"):
@@ -168,7 +162,7 @@ elif st.session_state.phase == "5_RESULT":
         st.session_state.turn = 1; st.session_state.battle_reports = []; st.session_state.phase = "2_PLACEMENT"
         st.rerun()
 
-# --- マップ描画とCSSインジェクション ---
+# --- マップ描画 ---
 for r in range(MAP_SIZE):
     cols = st.columns(MAP_SIZE)
     for c in range(MAP_SIZE):
@@ -178,26 +172,22 @@ for r in range(MAP_SIZE):
         
         cap = "🏰" if (r,c) in st.session_state.capitals.values() else ""
         u_icon = unit["icon"] if unit else ""
-        
         label = f"{icon}{cap}\n🛡️{def_v} 💰{eco_v}\n{u_icon}"
         
-        # セルごとに個別のスタイルを生成（重要：!importantで強制上書き）
+        # ポイント: セルの状態（bgの色）をキーに含めることでCSSの再適用を強制する
+        # これにより、色が変化した瞬間にStreamlitが新しいスタイルのボタンを描画します
+        cell_key = f"cell_{r}_{c}_{bg.replace('#', '')}"
+
         st.markdown(f"""
             <style>
-            div[data-testid="stHorizontalBlock"] > div:nth-child({c+1}) button {{
+            div[data-testid="column"]:nth-child({c+1}) button[key="{cell_key}"] {{
                 background-color: {bg} !important;
-                border: {border} !important;
-            }}
-            /* ホバー時も色を維持 */
-            div[data-testid="stHorizontalBlock"] > div:nth-child({c+1}) button:hover {{
-                background-color: {bg} !important;
-                opacity: 0.8;
-                border: {border} !important;
+                border: 3px solid {border} !important;
             }}
             </style>
         """, unsafe_allow_html=True)
         
-        cols[c].button(label, key=f"cell_{r}_{c}", on_click=on_cell_click, args=(r,c, mode, selected_u))
+        cols[c].button(label, key=cell_key, on_click=on_cell_click, args=(r,c, mode, selected_u))
 
 if st.session_state.battle_reports:
     with st.expander("📝 記録"):
