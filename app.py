@@ -13,7 +13,25 @@ UNITS = {
     "銃兵団": {"cost": 600, "atk": 600, "icon": "🔫"},
     "砲兵団": {"cost": 800, "atk": 800, "icon": "💣"},
 }
-
+def generate_map_background(prompt_text):
+    # Nano Banana 2 (Gemini 3 Flash Image) モデルを指定
+    # ※API上の正式な識別子は 'gemini-3-flash-image' または 'imagen-3' です
+    model = genai.GenerativeModel('gemini-3-flash')
+    
+    # 画像生成リクエスト
+    # 注意: モデルによって引数名が 'prompt' や 'content' と異なる場合があります
+    response = model.generate_content(
+        prompt_text,
+        generation_config={
+            "candidate_count": 1,
+            # 画像生成に特化したパラメータをここに追加
+        }
+    )
+    
+    # 応答から画像データを抽出
+    if response.candidates[0].content.parts[0].inline_data:
+        return response.candidates[0].content.parts[0].inline_data.data
+    return None
 # --- 2. Gemini API 背景生成ロジック ---
 def generate_world_map_bg():
     """地形分布をプロンプト化してImagen(Nano Banana 2)で画像を生成"""
@@ -38,8 +56,8 @@ def generate_world_map_bg():
         
         # 注意: モデル名は環境に応じて 'gemini-3-flash' 等に調整
         # ここでは提供された生成機能を利用するインターフェースとして記述
-        images = st.image_generation(prompt)
-        
+        images = generate_map_background(prompt)
+
         if images:
             img = images[0]
             buffered = BytesIO()
