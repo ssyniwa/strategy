@@ -21,7 +21,7 @@ def image_generation(prompt):
         prompt,
         # 画像生成用のパラメータ設定
     )
-    return response.images[0] # 生成された画像を取得
+    return response.images # 生成された画像を取得
 # --- 2. 背景画像生成ロジック ---
 def generate_world_map_bg():
     """地形分布をプロンプト化して画像を生成し、Base64で返す"""
