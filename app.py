@@ -2,7 +2,7 @@ import streamlit as st
 import numpy as np
 import base64
 from io import BytesIO
-
+import google.generativeai as genai
 # --- 1. 基本設定 ---
 MAP_SIZE = 6
 UNITS = {
@@ -12,7 +12,16 @@ UNITS = {
     "銃兵団": {"cost": 600, "atk": 600, "icon": "🔫"},
     "砲兵団": {"cost": 800, "atk": 800, "icon": "💣"},
 }
-
+genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+def image_generation(prompt):
+    # 画像生成モデル（Gemini 3 Flash Image / Nano Banana 2相当）の呼び出し
+    # ※現在のSDK仕様に基づいた疑似コードです
+    model = genai.GenerativeModel('gemini-3-flash')
+    response = model.generate_content(
+        prompt,
+        # 画像生成用のパラメータ設定
+    )
+    return response.images[0] # 生成された画像を取得
 # --- 2. 背景画像生成ロジック ---
 def generate_world_map_bg():
     """地形分布をプロンプト化して画像を生成し、Base64で返す"""
@@ -32,7 +41,7 @@ def generate_world_map_bg():
     # 画像生成ツールの呼び出し (内部的にNano Banana 2を使用)
     try:
         # 実際には生成された画像オブジェクトが返ってくると仮定
-        generated_images = st.image_generation(prompt)
+        generated_images = image_generation(prompt)
         if generated_images:
             img = generated_images[0]
             buffered = BytesIO()
