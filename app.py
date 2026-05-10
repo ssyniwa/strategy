@@ -1,9 +1,8 @@
 import streamlit as st
 import numpy as np
 
-# --- 設定 ---
+# --- 1. 定数・設定 ---
 MAP_SIZE = 5
-INCOME_PER_CELL = 10
 COST_DEFENSE_UP = 50
 DEFENSE_UP_AMOUNT = 100
 
@@ -15,30 +14,23 @@ UNITS = {
     "砲兵団": {"cost": 800, "atk": 800, "icon": "💣"},
 }
 
-# --- 初期化 ---
+# --- 2. セッション状態の初期化 ---
 if 'phase' not in st.session_state:
     st.session_state.phase = "1_EXPANSION"
     st.session_state.turn = 1
     st.session_state.owner = np.zeros((MAP_SIZE, MAP_SIZE), dtype=int)
+    # 防御力 (50-200) と 資金力 (10-50) をランダム生成
     st.session_state.defense = np.random.randint(50, 201, size=(MAP_SIZE, MAP_SIZE))
-    st.session_state.units = {} 
+    st.session_state.economy = np.random.randint(10, 51, size=(MAP_SIZE, MAP_SIZE))
+    st.session_state.units = {}
     st.session_state.capitals = {1: None, 2: None}
     st.session_state.money = {1: 0, 2: 0}
     st.session_state.battle_reports = []
     st.session_state.selected_pos = None
-    st.session_state.winner = None
-    # 行動済み部隊を管理するリスト
     st.session_state.moved_units = []
+    st.session_state.winner = None
 
-# --- ロジック関数 ---
-def get_neighbors(r, c):
-    res = []
-    for dr, dc in [(-1,0), (1,0), (0,-1), (0,1)]:
-        nr, nc = r + dr, c + dc
-        if 0 <= nr < MAP_SIZE and 0 <= nc < MAP_SIZE:
-            res.append((nr, nc))
-    return res
-
+# --- 3. 戦闘ロジック ---
 def handle_battle(start_pos, end_pos):
     atk_p = st.session_state.turn
     def_p = 3 - atk_p
@@ -46,37 +38,36 @@ def handle_battle(start_pos, end_pos):
     target_unit = st.session_state.units.get(end_pos)
     target_def = st.session_state.defense[end_pos]
 
-    # 戦闘解決
+    victory = False
     if target_unit:
         if unit["atk"] > target_unit["atk"]:
-            st.session_state.battle_reports.append(f"勝利！{end_pos}の敵部隊を撃破")
-            st.session_state.owner[end_pos] = atk_p
-            st.session_state.units[end_pos] = unit
-            st.session_state.defense[end_pos] = unit["atk"] // 2
-            del st.session_state.units[start_pos]
-            st.session_state.moved_units.append(end_pos) # 移動先で行動済み
+            st.session_state.battle_reports.append(f"勝利！{end_pos}の部隊を撃破")
+            victory = True
         else:
             st.session_state.battle_reports.append(f"敗北...{start_pos}の部隊が消滅")
             del st.session_state.units[start_pos]
     else:
         if unit["atk"] > target_def:
             st.session_state.battle_reports.append(f"占領！{end_pos}を奪取")
-            st.session_state.owner[end_pos] = atk_p
-            st.session_state.defense[end_pos] = max(10, unit["atk"] - target_def)
-            st.session_state.units[end_pos] = unit
-            del st.session_state.units[start_pos]
-            st.session_state.moved_units.append(end_pos) # 移動先で行動済み
+            victory = True
         else:
             st.session_state.battle_reports.append(f"攻撃失敗！{end_pos}の防御を削りました")
             st.session_state.defense[end_pos] -= unit["atk"]
-            st.session_state.moved_units.append(start_pos) # 移動できなかったが行動済み
+            st.session_state.moved_units.append(start_pos)
 
-    # 首都チェック
-    if end_pos == st.session_state.capitals[def_p] and st.session_state.owner[end_pos] == atk_p:
-        st.session_state.winner = atk_p
-        st.session_state.phase = "GAME_OVER"
+    if victory:
+        st.session_state.owner[end_pos] = atk_p
+        st.session_state.units[end_pos] = unit
+        st.session_state.defense[end_pos] = max(20, unit["atk"] // 2)
+        del st.session_state.units[start_pos]
+        st.session_state.moved_units.append(end_pos)
+        if end_pos == st.session_state.capitals[def_p]:
+            st.session_state.winner = atk_p
+            st.session_state.phase = "GAME_OVER"
 
+# --- 4. クリックイベント ---
 def on_cell_click(r, c, mode=None, unit_name=None):
+    if st.session_state.winner: return
     p = st.session_state.turn
     
     if st.session_state.phase == "1_EXPANSION":
@@ -90,7 +81,7 @@ def on_cell_click(r, c, mode=None, unit_name=None):
 
     elif st.session_state.phase == "2_PLACEMENT":
         if st.session_state.owner[r,c] == p:
-            if mode == "部隊配置":
+            if mode == "部隊配置" and unit_name:
                 u_data = UNITS[unit_name]
                 if st.session_state.money[p] >= u_data["cost"]:
                     st.session_state.money[p] -= u_data["cost"]
@@ -101,100 +92,87 @@ def on_cell_click(r, c, mode=None, unit_name=None):
                     st.session_state.defense[r,c] += DEFENSE_UP_AMOUNT
 
     elif st.session_state.phase == "3_INVASION":
-        # 行動済みのマスなら選択不可
-        if (r, c) in st.session_state.moved_units:
-            st.warning("この部隊は既に行動済みです。")
-            return
-
+        if (r, c) in st.session_state.moved_units: return
         if st.session_state.selected_pos is None:
             if (r,c) in st.session_state.units and st.session_state.owner[r,c] == p:
                 st.session_state.selected_pos = (r,c)
         else:
             start_pos = st.session_state.selected_pos
-            if (r,c) in get_neighbors(*start_pos):
+            if abs(r - start_pos[0]) + abs(c - start_pos[1]) == 1:
                 if st.session_state.owner[r,c] == p:
                     if (r,c) not in st.session_state.units:
                         st.session_state.units[(r,c)] = st.session_state.units[start_pos]
                         del st.session_state.units[start_pos]
-                        st.session_state.moved_units.append((r, c)) # 移動完了
+                        st.session_state.moved_units.append((r, c))
                 else:
                     handle_battle(start_pos, (r,c))
             st.session_state.selected_pos = None
 
-# --- メインUI ---
-st.title("⚔️ 陣地取りタクティクス")
+# --- 5. UI構築 ---
+st.title("🏙️ 領土戦略シミュレーター")
 
 if st.session_state.phase == "GAME_OVER":
-    st.balloons()
-    st.header(f"🎉 プレイヤー {st.session_state.winner} の勝利！")
-    if st.button("もう一度遊ぶ"):
-        st.session_state.clear()
-        st.rerun()
+    st.success(f"🎊 プレイヤー {st.session_state.winner} の勝利！")
+    if st.button("再挑戦"): st.session_state.clear(); st.rerun()
     st.stop()
 
-p = st.session_state.turn
-st.sidebar.subheader(f"プレイヤー {'A 🔵' if p==1 else 'B 🔴'}")
-st.sidebar.metric("所持金", f"${st.session_state.money[p]}")
+# サイドバー設定
+st.sidebar.title(f"Player {'A 🔵' if st.session_state.turn==1 else 'B 🔴'}")
+st.sidebar.metric("現在の軍資金", f"${st.session_state.money[st.session_state.turn]}")
 
 mode, selected_u = None, None
-
-if st.session_state.phase == "1_EXPANSION":
-    st.sidebar.info("空き地を選んで陣地を広げてください。")
-
-elif st.session_state.phase == "2_PLACEMENT":
-    mode = st.sidebar.radio("アクション", ["部隊配置", "防御増強"])
+if st.session_state.phase == "2_PLACEMENT":
+    mode = st.sidebar.radio("行動", ["部隊配置", "防御増強"])
     if mode == "部隊配置":
         selected_u = st.sidebar.selectbox("ユニット", list(UNITS.keys()))
-    if st.sidebar.button("配置完了（ターン終了）"):
-        if st.session_state.turn == 1:
-            st.session_state.turn = 2
-        else:
-            st.session_state.phase = "3_INVASION"
-            st.session_state.turn = 1
-            st.session_state.moved_units = [] # リセット
+    if st.sidebar.button("配置終了"):
+        if st.session_state.turn == 1: st.session_state.turn = 2
+        else: st.session_state.phase = "3_INVASION"; st.session_state.turn = 1; st.session_state.moved_units = []
         st.rerun()
 
 elif st.session_state.phase == "3_INVASION":
-    st.sidebar.warning("部隊を選んで隣接マスへ移動・攻撃！")
-    if st.sidebar.button("侵攻完了（ターン終了）"):
-        if st.session_state.turn == 1:
-            st.session_state.turn = 2
-            st.session_state.moved_units = [] # プレイヤー交代時にリセット
-        else:
-            st.session_state.phase = "5_RESULT"
+    if st.sidebar.button("進軍終了"):
+        if st.session_state.turn == 1: st.session_state.turn = 2; st.session_state.moved_units = []
+        else: st.session_state.phase = "5_RESULT"
         st.rerun()
 
 elif st.session_state.phase == "5_RESULT":
-    if st.sidebar.button("次のターンへ"):
+    if st.sidebar.button("資金回収して次ターンへ"):
+        # 占領地点ごとの経済力(economy)を合計して加算
         for i in [1, 2]:
-            st.session_state.money[i] += np.sum(st.session_state.owner == i) * INCOME_PER_CELL
-        st.session_state.turn = 1
-        st.session_state.battle_reports = []
-        st.session_state.phase = "2_PLACEMENT"
+            income = np.sum(st.session_state.economy[st.session_state.owner == i])
+            st.session_state.money[i] += income
+        st.session_state.turn = 1; st.session_state.battle_reports = []; st.session_state.phase = "2_PLACEMENT"
         st.rerun()
 
-# マップ表示
+# CSSでボタンのテキストを小さく調整
+st.markdown("<style>div.stButton > button { font-size: 10px !important; padding: 2px !important; height: 100px !important; }</style>", unsafe_allow_html=True)
+
+# マップ描画
 for r in range(MAP_SIZE):
     cols = st.columns(MAP_SIZE)
     for c in range(MAP_SIZE):
         owner = st.session_state.owner[r,c]
         unit = st.session_state.units.get((r,c))
-        is_cap = (st.session_state.capitals[1] == (r,c) or st.session_state.capitals[2] == (r,c))
+        def_val = st.session_state.defense[r,c]
+        eco_val = st.session_state.economy[r,c]
+        is_cap1 = (st.session_state.capitals[1] == (r,c))
+        is_cap2 = (st.session_state.capitals[2] == (r,c))
         
+        # アイコンとステータス表示の組み立て
         bg = "🔵" if owner == 1 else "🔴" if owner == 2 else "⬜"
-        if is_cap: bg = "🏰"
+        if is_cap1: bg = "🏰(A)"
+        elif is_cap2: bg = "🏰(B)"
         
-        # 選択中ハイライト
-        if st.session_state.selected_pos == (r,c):
-            bg = "🟡"
-        # 行動済みを視覚的に表現（灰色っぽく）
-        elif (r,c) in st.session_state.moved_units and st.session_state.phase == "3_INVASION":
-            bg = "⬛"
+        if st.session_state.selected_pos == (r,c): bg = "🟡"
+        elif (r,c) in st.session_state.moved_units and st.session_state.phase == "3_INVASION": bg = "⬛"
             
-        content = f"{unit['icon']}" if unit else f"{st.session_state.defense[r,c]}"
-        cols[c].button(f"{bg}\n{content}", key=f"{r}-{c}", on_click=on_cell_click, args=(r,c, mode, selected_u))
+        unit_icon = unit["icon"] if unit else "空"
+        
+        # ボタン内のテキスト：所属、防御力、資金力、部隊を4行で表示
+        label = f"{bg}\n🛡️{def_val}\n💰{eco_val}\n👤{unit_icon}"
+        cols[c].button(label, key=f"x{r}{c}", on_click=on_cell_click, args=(r,c, mode, selected_u))
 
 if st.session_state.battle_reports:
-    st.divider()
-    for msg in st.session_state.battle_reports:
-        st.caption(msg)
+    with st.expander("📝 記録"):
+        for msg in st.session_state.battle_reports: st.write(msg)
