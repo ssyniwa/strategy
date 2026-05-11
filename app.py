@@ -3,7 +3,7 @@ import numpy as np
 import base64
 import os
 
-# --- 1. 画像読み込み関数（絶対パス & MIMEタイプ指定） ---
+# --- 1. 画像読み込み（MIMEタイプ対応） ---
 def get_base64_image(file_name):
     base_path = os.path.dirname(os.path.abspath(__file__))
     full_path = os.path.join(base_path, file_name)
@@ -15,7 +15,7 @@ def get_base64_image(file_name):
             return f"data:{mime};base64,{data}"
     return None
 
-# --- 2. 初期設定 ---
+# --- 2. 設定とセッション初期化 ---
 MAP_SIZE = 6
 TILE_DEFS = {
     "mountain": {"icon": "⛰️", "file": "mount.png"},
@@ -28,83 +28,71 @@ if 'owner' not in st.session_state:
     st.session_state.defense = np.random.randint(50, 201, size=(MAP_SIZE, MAP_SIZE))
     st.session_state.economy = np.random.randint(10, 51, size=(MAP_SIZE, MAP_SIZE))
     st.session_state.turn = 1
-    st.session_state.capitals = {1: None, 2: None}
 
-# --- 3. サイドバー：ターン表示の強化 ---
-st.sidebar.title("🛡️ 司令部")
-
-# 現在のプレイヤー情報を取得
-curr_p = st.session_state.turn
-p_name = "Player A (青)" if curr_p == 1 else "Player B (赤)"
-p_emoji = "🔵" if curr_p == 1 else "🔴"
-
-# 視認性の高いターン表示
-st.sidebar.markdown(f"""
-    <div style="padding:15px; border-radius:10px; background-color: rgba(255,255,255,0.1); border: 2px solid {'#3498db' if curr_p==1 else '#e74c3c'};">
-        <h2 style="margin:0; text-align:center;">{p_emoji} {p_name}</h2>
-        <p style="margin:0; text-align:center; font-weight:bold;">あなたのターンです</p>
-    </div>
-""", unsafe_allow_html=True)
-
-st.sidebar.divider()
-if st.sidebar.button("🔄 マップをリセット"):
-    st.session_state.clear()
-    st.rerun()
-
-# --- 4. 共通CSS（透明化と袋文字） ---
+# --- 3. グローバルCSS（ボタンの共通設定） ---
 st.markdown("""
 <style>
+    /* ボタンの標準色を完全に排除し、枠線とサイズを固定 */
     div.stButton > button {
         width: 100% !important;
-        height: 110px !important;
+        height: 100px !important;
         background-color: transparent !important;
         background-size: cover !important;
         background-position: center !important;
         border: 2px solid rgba(255,255,255,0.4) !important;
-        border-radius: 10px !important;
+        border-radius: 8px !important;
+        padding: 0 !important;
     }
-    div.stButton > button::before { display: none !important; } /* 膜を消す */
-    
+    /* ボタン内部の疑似要素（グレーの膜）を強制削除 */
+    div.stButton > button::before {
+        content: none !important;
+        display: none !important;
+    }
+    /* 文字の視認性向上 */
     div.stButton p {
         color: white !important;
         font-weight: 900 !important;
-        text-shadow: 2px 2px 3px #000, -1px -1px 3px #000 !important;
+        text-shadow: 2px 2px 3px black, -1px -1px 3px black !important;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 5. メインマップ ---
+# --- 4. サイドバー（ターン表示） ---
+st.sidebar.title("🎮 SYSTEM")
+turn_mark = "🔵 Player A" if st.session_state.turn == 1 else "🔴 Player B"
+st.sidebar.subheader(f"現在：{turn_mark}")
+
+# --- 5. メインマップ描画 ---
 st.title("⚔️ $6 \\times 6$ World Tactics")
 
 def on_click(r, c):
     if st.session_state.owner[r,c] == 0:
         st.session_state.owner[r,c] = st.session_state.turn
-        # 首都の設定（各プレイヤーの最初の1手）
-        if st.session_state.capitals[st.session_state.turn] is None:
-            st.session_state.capitals[st.session_state.turn] = (r, c)
         st.session_state.turn = 3 - st.session_state.turn
 
+# マップ生成
 for r in range(MAP_SIZE):
     cols = st.columns(MAP_SIZE)
     for c in range(MAP_SIZE):
+        # 地形判定
         d, e = st.session_state.defense[r,c], st.session_state.economy[r,c]
         t_key = "mountain" if d > 160 else "field" if e > 35 else "forest"
         conf = TILE_DEFS[t_key]
+        
+        # 個別キーの設定
+        b_key = f"tile_{r}_{c}"
         img_b64 = get_base64_image(conf["file"])
         
-        b_key = f"b_{r}_{c}"
-        
-        # 個別背景の適用
+        # 🟢 ここが最終回答：セレクタを極限まで具体化
         if img_b64:
             st.markdown(f"""
                 <style>
-                button[key="{b_key}"] {{ background-image: url("{img_b64}") !important; }}
+                /* data-testidを利用して特定のボタンのみを狙い撃ち */
+                div[data-testid="column"]:nth-child({c+1}) button[key="{b_key}"] {{
+                    background-image: linear-gradient(rgba(0,0,0,0.2), rgba(0,0,0,0.2)), url("{img_b64}") !important;
+                }}
                 </style>
-            """, unsafe_allow_html=True)
+                """, unsafe_allow_html=True)
         
-        owner = st.session_state.owner[r,c]
-        p_icon = "🔵" if owner == 1 else "🔴" if owner == 2 else "⚪"
-        is_cap = "🏰" if (r,c) in st.session_state.capitals.values() else ""
-        
-        label = f"{p_icon}{conf['icon']}{is_cap}\n🛡️{d}\n💰{e}"
-        cols[c].button(label, key=b_key, on_click=on_click, args=(r,c))
+        owner_icon = "🔵" if st.session_state.owner[r,c] == 1 else "🔴" if st.session_state.owner[r,c] == 2 else "⚪"
+        cols[c].button(f"{owner_icon}{conf['icon']}\n🛡️{d}\n💰{e}", key=b_key, on_click=on_click, args=(r,c))
