@@ -20,14 +20,13 @@ UNITS = {
 
 # --- 2. 関数：ローカル画像をBase64に変換 ---
 def get_image_base64(path):
-    """ローカルファイルをHTML埋め込み用にエンコード"""
     try:
         if os.path.exists(path):
             with open(path, "rb") as f:
                 data = f.read()
             return f"data:image/png;base64,{base64.b64encode(data).decode()}"
         else:
-            return "" # ファイルがない場合は空文字を返す
+            return ""
     except Exception:
         return ""
 
@@ -37,12 +36,10 @@ if 'phase' not in st.session_state:
     st.session_state.turn = 1
     st.session_state.owner = np.zeros((MAP_SIZE, MAP_SIZE), dtype=int)
     
-    # 地形の均等配分
     terrain_types = [0]*9 + [1]*9 + [2]*9 + [3]*9
     random.shuffle(terrain_types)
     st.session_state.terrain_map = np.array(terrain_types).reshape(MAP_SIZE, MAP_SIZE)
     
-    # 地形画像の読み込み
     st.session_state.images = {
         0: get_image_base64("nmount.png"),
         1: get_image_base64("nforest.png"),
@@ -145,21 +142,33 @@ def on_cell_click(r, c, mode=None, unit_name=None):
                 else: handle_battle(start_pos, (r,c))
             st.session_state.selected_pos = None
 
-# --- 5. CSS ---
+# --- 5. CSS (白枠パルス演出の強化) ---
 st.set_page_config(layout="wide", page_title="World Tactics 6x6")
 st.markdown("""
 <style>
-    .tile-container { position: relative; width: 100%; height: 100px; margin-bottom: 8px; border-radius: 8px; overflow: hidden; border: 1px solid #444; }
-    .tile-bg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-size: cover; background-position: center; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 1; color: white; font-weight: bold; line-height: 1.1; text-align: center; font-size: 0.7rem; }
+    .tile-container { position: relative; width: 100%; height: 100px; margin-bottom: 8px; border-radius: 8px; overflow: hidden; }
+    .tile-bg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-size: cover; background-position: center; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 1; color: white; font-weight: bold; line-height: 1.1; text-align: center; font-size: 0.7rem; box-sizing: border-box; }
     .text-overlay { background: rgba(0, 0, 0, 0.4); width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; }
     
-    .owner-1 { border: 4px solid #3498DB !important; }
-    .owner-2 { border: 4px solid #E74C3C !important; }
+    /* 通常の勢力枠 */
+    .owner-1 { border: 3px solid #3498DB; }
+    .owner-2 { border: 3px solid #E74C3C; }
     
-    @keyframes pulse-border { 0% { box-shadow: inset 0 0 10px #FFF; } 50% { box-shadow: inset 0 0 25px #FFF; } 100% { box-shadow: inset 0 0 10px #FFF; } }
-    .active-unit { animation: pulse-border 1.5s infinite; z-index: 2; }
-    .is-selected { border: 4px solid #F1C40F !important; }
-    .is-moved { filter: brightness(0.4) grayscale(0.8); }
+    /* 【強化】白枠パルスアニメーション */
+    @keyframes pulse-white {
+        0% { border-color: rgba(255, 255, 255, 0.4); box-shadow: 0 0 5px rgba(255, 255, 255, 0.2); }
+        50% { border-color: rgba(255, 255, 255, 1.0); box-shadow: 0 0 20px rgba(255, 255, 255, 0.8); }
+        100% { border-color: rgba(255, 255, 255, 0.4); box-shadow: 0 0 5px rgba(255, 255, 255, 0.2); }
+    }
+    .active-unit {
+        animation: pulse-white 1.2s infinite;
+        border: 4px solid white !important;
+        z-index: 5;
+    }
+
+    /* 選択中と行動済み */
+    .is-selected { border: 4px solid #F1C40F !important; box-shadow: 0 0 15px #F1C40F !important; }
+    .is-moved { filter: brightness(0.3) grayscale(1.0); }
 
     .tile-container div.stButton > button { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-color: transparent !important; border: none !important; color: transparent !important; z-index: 10; }
 </style>
@@ -185,7 +194,7 @@ else:
             selected_u = st.sidebar.selectbox("ユニットを選択", unit_options)
         elif mode == "防御増強":
             st.sidebar.write(f"コスト: ${COST_DEFENSE_UP}")
-            st.sidebar.write(f"上昇値: +{DEFENSE_UP_AMOUNT}")
+            st.sidebar.write(f"防御力+{DEFENSE_UP_AMOUNT}")
             
         if st.sidebar.button("配置終了"):
             if st.session_state.turn == 1: st.session_state.turn = 2
@@ -218,13 +227,14 @@ for r in range(MAP_SIZE):
         unit = st.session_state.units.get((r,c))
         t_type = st.session_state.terrain_map[r,c]
 
-        # 地形アイコン
         t_icon = {0:"⛰️", 1:"🌲", 2:"🏙️", 3:"🌊"}[t_type]
         bg_url = st.session_state.images[t_type]
 
         classes = f"owner-{owner}" if owner > 0 else ""
+        # 現在のプレイヤーの動かせる部隊に白枠パルスを適用
         if st.session_state.phase == "3_INVASION" and owner == current_p and unit and (r, c) not in st.session_state.moved_units:
             classes += " active-unit"
+            
         if st.session_state.selected_pos == (r,c): classes += " is-selected"
         if (r,c) in st.session_state.moved_units: classes += " is-moved"
 
@@ -234,8 +244,8 @@ for r in range(MAP_SIZE):
 
         with cols[c]:
             st.markdown(f"""
-                <div class="tile-container {classes}">
-                    <div class="tile-bg" style="background-image: url('{bg_url}');">
+                <div class="tile-container">
+                    <div class="tile-bg {classes}" style="background-image: url('{bg_url}');">
                         <div class="text-overlay">
                             <div>{t_icon} {special}</div>
                             <div style="font-size: 0.6rem;">🛡️{int(def_val)} 💰{int(eco_val)}</div>
