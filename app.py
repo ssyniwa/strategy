@@ -3,33 +3,20 @@ import numpy as np
 import base64
 import os
 
-# --- 1. 画像をBase64に変換する関数 ---
+# --- 1. 画像をBase64に変換し、CSSで使える形式にする関数 ---
 def get_base64_image(image_path):
     if os.path.exists(image_path):
         with open(image_path, "rb") as img_file:
-            return f"data:png;base64,{base64.b64encode(img_file.read()).decode()}"
+            data = base64.b64encode(img_file.read()).decode()
+            return f"data:png;base64,{data}"
     else:
-        # ファイルがない場合のフォールバック（色指定など）
-        return ""
+        return None
 
-# --- 2. 地形設定と画像読み込み ---
-# 生成したファイル名に合わせて読み込みます
+# --- 2. 地形設定と画像データの準備 ---
 TILE_CONFIG = {
-    "mountain": {
-        "icon": "⛰️",
-        "img_base64": get_base64_image("mount.png"),
-        "label": "山岳"
-    },
-    "field": {
-        "icon": "🌾",
-        "img_base64": get_base64_image("field.png"),
-        "label": "平野"
-    },
-    "forest": {
-        "icon": "🌲",
-        "img_base64": get_base64_image("forest.png"),
-        "label": "森林"
-    }
+    "mountain": {"icon": "⛰️", "file": "mount.png"},
+    "field": {"icon": "🌾", "file": "field.png"},
+    "forest": {"icon": "🌲", "file": "forest.png"}
 }
 
 # --- 3. セッション状態の初期化 ---
@@ -42,17 +29,20 @@ if 'owner' not in st.session_state:
     st.session_state.phase = "1_EXPANSION"
     st.session_state.capitals = {1: None, 2: None}
 
-# --- 4. 共通スタイル (袋文字・ボタンサイズ) ---
+# --- 4. CSS: 全体スタイルと文字色 ---
 st.markdown("""
 <style>
+    /* ボタンの基本形 */
     div.stButton > button {
         width: 100% !important;
         height: 110px !important;
         background-size: cover !important;
         background-position: center !important;
+        background-repeat: no-repeat !important;
         border: 2px solid rgba(255,255,255,0.4) !important;
-        border-radius: 10px !important;
+        border-radius: 8px !important;
     }
+    /* 文字の視認性向上（袋文字） */
     div.stButton p {
         color: white !important;
         font-weight: 900 !important;
@@ -62,17 +52,31 @@ st.markdown("""
             2px -2px 0 #000, -2px 2px 0 #000,
             0 2px 4px rgba(0,0,0,0.8) !important;
     }
+    /* プレイヤーカラー */
     button:has(p:contains("🔵")) p { color: #3498db !important; }
     button:has(p:contains("🔴")) p { color: #e74c3c !important; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 5. 地形判定とクリック処理 ---
+# --- 5. サイドバー：ターンの明示表示 ---
+st.sidebar.title("🎮 ゲーム情報")
+current_p = st.session_state.turn
+p_color = "青 (Player A)" if current_p == 1 else "赤 (Player B)"
+p_emoji = "🔵" if current_p == 1 else "🔴"
+
+# サイドバーに現在のターンを大きく表示
+st.sidebar.subheader(f"現在のターン: {p_emoji}")
+st.sidebar.markdown(f"### **{p_color}** の行動中です")
+
+if st.sidebar.button("🔄 マップをリセット"):
+    st.session_state.clear()
+    st.rerun()
+
+# --- 6. マップ描画と個別背景CSSの適用 ---
 def get_tile_type(r, c):
-    def_v = st.session_state.defense[r,c]
-    eco_v = st.session_state.economy[r,c]
-    if def_v > 160: return "mountain"
-    elif eco_v > 35: return "field"
+    d, e = st.session_state.defense[r,c], st.session_state.economy[r,c]
+    if d > 160: return "mountain"
+    if e > 35: return "field"
     return "forest"
 
 def on_cell_click(r, c):
@@ -83,37 +87,39 @@ def on_cell_click(r, c):
         st.session_state.turn = 3 - p
         if np.all(st.session_state.owner != 0): st.session_state.phase = "2_ACTION"
 
-# --- 6. メイン描画 ---
-st.title("⚔️ $6 \\times 6$ Custom Terrain Map")
-
+# マップループ
 for r in range(MAP_SIZE):
     cols = st.columns(MAP_SIZE)
     for c in range(MAP_SIZE):
         t_type = get_tile_type(r, c)
         config = TILE_CONFIG[t_type]
-        b_key = f"tile_{r}_{c}"
+        b_key = f"btn_{r}_{c}"
         
-        # Base64データをCSSに注入
-        bg_img = config['img_base64']
-        st.markdown(f"""
-            <style>
-            div:has(> button[key="{b_key}"]) > button {{
-                background-image: 
-                    linear-gradient(rgba(0,0,0,0.3), rgba(0,0,0,0.3)), 
-                    url("{bg_img}") !important;
-            }}
-            </style>
-        """, unsafe_allow_html=True)
+        # 画像をBase64で取得
+        img_b64 = get_base64_image(config["file"])
+        
+        if img_b64:
+            # 強力なCSSセレクタで背景を上書き
+            st.markdown(f"""
+                <style>
+                div[data-testid="column"]:nth-child({c+1}) button[key="{b_key}"] {{
+                    background-image: linear-gradient(rgba(0,0,0,0.3), rgba(0,0,0,0.3)), url("{img_b64}") !important;
+                }}
+                </style>
+            """, unsafe_allow_html=True)
+        else:
+            # 画像がない場合のデバッグ用背景色
+            bg_color = "#8b4513" if t_type == "mountain" else "#228b22" if t_type == "forest" else "#daa520"
+            st.markdown(f"<style>button[key='{b_key}'] {{ background-color: {bg_color} !important; }}</style>", unsafe_allow_html=True)
 
-        # ラベル構築
         owner = st.session_state.owner[r,c]
         p_icon = "🔵" if owner == 1 else "🔴" if owner == 2 else "⚪"
-        cap_icon = "🏰" if (r,c) in st.session_state.capitals.values() else ""
-        label = f"{p_icon}{config['icon']}{cap_icon}\n🛡️{st.session_state.defense[r,c]}\n💰{st.session_state.economy[r,c]}"
+        cap = "🏰" if (r,c) in st.session_state.capitals.values() else ""
+        label = f"{p_icon}{config['icon']}{cap}\n🛡️{st.session_state.defense[r,c]}\n💰{st.session_state.economy[r,c]}"
         
         cols[c].button(label, key=b_key, on_click=on_cell_click, args=(r,c))
 
-st.sidebar.write(f"現在のフェーズ: {st.session_state.phase}")
-if st.sidebar.button("リセット"):
-    st.session_state.clear()
-    st.rerun()
+# 画像ファイルがない場合の警告表示
+missing_files = [v["file"] for v in TILE_CONFIG.values() if not os.path.exists(v["file"])]
+if missing_files:
+    st.warning(f"以下の画像ファイルが見つかりません: {', '.join(missing_files)}")
