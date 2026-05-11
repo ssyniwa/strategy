@@ -27,50 +27,51 @@ if 'owner' not in st.session_state:
     st.session_state.economy = np.random.randint(10, 51, size=(MAP_SIZE, MAP_SIZE))
     st.session_state.turn = 1
 
-# --- 3. 最強CSS：ボタンの全要素を透明化し、背景画像を露出させる ---
+# --- 3. 最強の「透明化」CSS ---
 st.markdown("""
 <style>
-    /* 全てのボタン関連要素を透明化 */
-    button[kind="secondary"], 
-    button[kind="secondary"] div,
-    button[kind="secondary"] p {
-        background-color: transparent !important;
-        background-image: none !important;
-        box-shadow: none !important;
-    }
-
-    /* 膜（擬似要素）の完全削除 */
-    button[kind="secondary"]::before, 
-    button[kind="secondary"]::after {
-        display: none !important;
-        content: none !important;
-    }
-
-    /* 基本サイズ設定 */
-    div.stButton > button {
-        width: 100% !important;
-        height: 100px !important;
-        border: 2px solid rgba(255,255,255,0.4) !important;
-        border-radius: 10px !important;
+    /* 1. ボタンを包む親要素(div)を画像を表示するキャンバスにする */
+    div[data-testid="stButton"] {
         background-size: cover !important;
         background-position: center !important;
+        background-repeat: no-repeat !important;
+        border-radius: 10px !important;
+        height: 100px !important;
+        border: 2px solid rgba(255,255,255,0.4) !important;
     }
 
-    /* 文字の視認性 */
-    div.stButton p {
+    /* 2. ボタン本体、およびその全ての内部要素を「物理的に透明」にする */
+    /* これにより background-image: none が効いていても関係なくなります */
+    div[data-testid="stButton"] > button,
+    div[data-testid="stButton"] > button div,
+    div[data-testid="stButton"] > button:hover,
+    div[data-testid="stButton"] > button:active,
+    div[data-testid="stButton"] > button:focus {
+        background-color: transparent !important;
+        background-image: none !important;
+        border: none !important;
+        box-shadow: none !important;
+        width: 100% !important;
+        height: 100% !important;
+        margin: 0 !important;
+    }
+
+    /* 3. 文字だけは見えるように最前面へ（透過させない） */
+    div[data-testid="stButton"] p {
         color: white !important;
         font-weight: 900 !important;
         text-shadow: 2px 2px 4px #000 !important;
+        opacity: 1 !important;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 4. サイドバー：ターン表示 ---
+# --- 4. サイドバー ---
 st.sidebar.title("🎮 SYSTEM")
-p_label = "A 🔵" if st.session_state.turn == 1 else "B 🔴"
-st.sidebar.subheader(f"現在：Player {p_label}")
+p_mark = "🔵 Player A" if st.session_state.turn == 1 else "🔴 Player B"
+st.sidebar.markdown(f"### 現在の番\n{p_mark}")
 
-# --- 5. メインマップ ---
+# --- 5. メイン描画 ---
 st.title("⚔️ $6 \\times 6$ World Tactics")
 
 def on_click(r, c):
@@ -78,7 +79,7 @@ def on_click(r, c):
         st.session_state.owner[r,c] = st.session_state.turn
         st.session_state.turn = 3 - st.session_state.turn
 
-# 画像事前ロード
+# 画像の事前キャッシュ
 images = {k: get_base64_image(v['file']) for k, v in TILE_DEFS.items()}
 
 for r in range(MAP_SIZE):
@@ -87,13 +88,14 @@ for r in range(MAP_SIZE):
         d, e = st.session_state.defense[r,c], st.session_state.economy[r,c]
         t_key = "mountain" if d > 160 else "field" if e > 35 else "forest"
         img_b64 = images[t_key]
-        b_key = f"b{r}{c}" # シンプルなキー
+        b_key = f"b{r}_{c}"
         
-        # 🟢 セレクタに「button[kind="secondary"]」を追加して詳細度を最大化
+        # 🟢 戦略変更：ボタン(button)ではなく、親のdivに対して背景を貼る
         if img_b64:
             st.markdown(f"""
                 <style>
-                div.stButton > button[kind="secondary"][key="{b_key}"] {{
+                /* column内の何番目のstButtonかを特定して画像を流し込む */
+                div[data-testid="column"]:nth-child({c+1}) div[data-testid="stButton"]:has(button[key="{b_key}"]) {{
                     background-image: linear-gradient(rgba(0,0,0,0.2), rgba(0,0,0,0.2)), url("{img_b64}") !important;
                 }}
                 </style>
