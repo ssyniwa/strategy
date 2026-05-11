@@ -196,7 +196,7 @@ for r in range(MAP_SIZE):
         
         # 防御力の高さで色を変える
         if def_val > 500: t_icon, color = "⛰️", "#4A4A4A" # 険しい山
-        elif def_val > 200: t_icon, color = "🌲", "#27AE60" # 深い森
+        elif def_val > 200: t_icon, color = "🌲", "#78AE27" # 深い森
         elif eco_val > 40: t_icon, color = "🌾", "#F1A20F" # 豊かな平野
         else: t_icon, color = "🍃", "#0634FF" # 草原
 
