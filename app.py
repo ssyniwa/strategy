@@ -1,10 +1,8 @@
 import streamlit as st
 import numpy as np
-import base64
-import os
 
-# --- 1. 基本設定 ---
-MAP_SIZE = 5
+# --- 1. 定数・設定 ---
+MAP_SIZE = 6  # 6x6に拡大
 COST_DEFENSE_UP = 50
 DEFENSE_UP_AMOUNT = 100
 
@@ -16,7 +14,7 @@ UNITS = {
     "砲兵団": {"cost": 800, "atk": 800, "icon": "💣"},
 }
 
-# --- 2. 初期化 ---
+# --- 2. セッション状態の初期化 ---
 if 'phase' not in st.session_state:
     st.session_state.phase = "1_EXPANSION"
     st.session_state.turn = 1
@@ -30,53 +28,7 @@ if 'phase' not in st.session_state:
     st.session_state.moved_units = []
     st.session_state.winner = None
 
-# --- 3. CSS：透明ボタンハイブリッド方式 ---
-st.markdown("""
-<style>
-    .tile-container {
-        position: relative;
-        width: 100%;
-        height: 110px;
-        margin-bottom: 10px;
-        border-radius: 8px;
-        overflow: hidden;
-    }
-    .tile-bg {
-        position: absolute;
-        top: 0; left: 0; width: 100%; height: 100%;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        z-index: 1;
-        transition: 0.3s;
-        color: white;
-        text-shadow: 1px 1px 2px black;
-        font-weight: bold;
-        line-height: 1.1;
-        text-align: center;
-        font-size: 0.8rem;
-    }
-    .owner-1 { border: 4px solid #3498DB !important; box-shadow: inset 0 0 15px #3498DB; }
-    .owner-2 { border: 4px solid #E74C3C !important; box-shadow: inset 0 0 15px #E74C3C; }
-    .is-selected { background-color: #F1C40F !important; color: black !important; }
-    .is-moved { filter: brightness(0.4) grayscale(0.6); }
-
-    .tile-container div.stButton > button {
-        position: absolute;
-        top: 0; left: 0; width: 100%; height: 100%;
-        background-color: transparent !important;
-        border: none !important;
-        color: transparent !important;
-        z-index: 10;
-    }
-    .tile-container div.stButton > button:hover {
-        background-color: rgba(255,255,255,0.2) !important;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-# --- 4. ロジック関数 ---
+# --- 3. ロジック関数 ---
 def handle_battle(start_pos, end_pos):
     atk_p = st.session_state.turn
     def_p = 3 - atk_p
@@ -142,13 +94,58 @@ def on_cell_click(r, c, mode=None, unit_name=None):
                 else: handle_battle(start_pos, (r,c))
             st.session_state.selected_pos = None
 
-# --- 5. UI構築 ---
+# --- 4. CSS ---
+st.set_page_config(layout="wide")
+st.markdown("""
+<style>
+    .tile-container {
+        position: relative;
+        width: 100%;
+        height: 100px; /* 6x6に合わせて少し高さを調整 */
+        margin-bottom: 8px;
+        border-radius: 8px;
+        overflow: hidden;
+    }
+    .tile-bg {
+        position: absolute;
+        top: 0; left: 0; width: 100%; height: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        z-index: 1;
+        color: white;
+        text-shadow: 1px 1px 2px black;
+        font-weight: bold;
+        line-height: 1.1;
+        text-align: center;
+        font-size: 0.75rem;
+    }
+    .owner-1 { border: 3px solid #3498DB !important; box-shadow: inset 0 0 10px #3498DB; }
+    .owner-2 { border: 3px solid #E74C3C !important; box-shadow: inset 0 0 10px #E74C3C; }
+    .is-selected { background-color: #F1C40F !important; color: black !important; }
+    .is-moved { filter: brightness(0.4) grayscale(0.6); }
+
+    .tile-container div.stButton > button {
+        position: absolute;
+        top: 0; left: 0; width: 100%; height: 100%;
+        background-color: transparent !important;
+        border: none !important;
+        color: transparent !important;
+        z-index: 10;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# --- 5. サイドバー ---
 p = st.session_state.turn
 st.sidebar.title(f"Player {'A 🔵' if p==1 else 'B 🔴'}")
 st.sidebar.metric("軍資金", f"${st.session_state.money[p]}")
 
 mode, selected_u = None, None
-if st.session_state.phase == "2_PLACEMENT":
+if st.session_state.phase == "1_EXPANSION":
+    st.sidebar.info("空地をクリックして陣地を獲得してください（交互）")
+elif st.session_state.phase == "2_PLACEMENT":
     mode = st.sidebar.radio("行動", ["部隊配置", "防御増強"])
     if mode == "部隊配置": selected_u = st.sidebar.selectbox("ユニット", list(UNITS.keys()))
     if st.sidebar.button("配置終了"):
@@ -169,7 +166,9 @@ elif st.session_state.phase == "5_RESULT":
 if st.session_state.winner:
     st.balloons(); st.success(f"勝利者: PLAYER {st.session_state.winner}"); st.stop()
 
-# --- マップ描画 ---
+# --- 6. マップ描画 ---
+st.title("🗺️ World Tactics 6x6")
+
 for r in range(MAP_SIZE):
     cols = st.columns(MAP_SIZE)
     for c in range(MAP_SIZE):
@@ -178,17 +177,15 @@ for r in range(MAP_SIZE):
         eco_val = st.session_state.economy[r,c]
         unit = st.session_state.units.get((r,c))
         
-        # 地形スタイル決定
+        # 地形スタイル
         if def_val > 150: t_icon, color = "⛰️", "#7D7D7D"
         elif eco_val > 35: t_icon, color = "🌾", "#F4D03F"
         else: t_icon, color = "🌲", "#27AE60"
 
-        # 特殊ラベル
         special = ""
         if (r,c) == st.session_state.capitals[1]: special = "🏰A"
         elif (r,c) == st.session_state.capitals[2]: special = "🏰B"
         
-        # 状態クラス
         classes = f"owner-{owner}" if owner > 0 else ""
         if st.session_state.selected_pos == (r,c): classes += " is-selected"
         if (r,c) in st.session_state.moved_units: classes += " is-moved"
@@ -198,11 +195,9 @@ for r in range(MAP_SIZE):
                 <div class="tile-container">
                     <div class="tile-bg {classes}" style="background-color: {color};">
                         <div>{t_icon} {special}</div>
-                        <div style="font-size: 0.7rem;">🛡️{def_val} 💰{eco_val}</div>
-                        <div style="font-size: 1.2rem;">{unit['icon'] if unit else ""}</div>
+                        <div style="font-size: 0.65rem;">🛡️{def_val} 💰{eco_val}</div>
+                        <div style="font-size: 1.1rem;">{unit['icon'] if unit else ""}</div>
                     </div>
             """, unsafe_allow_html=True)
-            
-            # 透明ボタン
             st.button("", key=f"btn{r}{c}", on_click=on_cell_click, args=(r,c, mode, selected_u))
             st.markdown("</div>", unsafe_allow_html=True)
