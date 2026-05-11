@@ -219,7 +219,7 @@ for r in range(MAP_SIZE):
         unit = st.session_state.units.get((r,c))
         t_type = st.session_state.terrain_map[r,c]
 
-        t_icon = {0:"⛰️", 1:"🌲", 2:"🏙", 3:"🌊"}[t_type]
+        t_icon = {0:"⛰️", 1:"🌲", 2:"🏙️", 3:"🌊"}[t_type]
         bg_url = IMAGES[t_type]
 
         classes = f"owner-{owner}" if owner > 0 else ""
