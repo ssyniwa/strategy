@@ -197,8 +197,8 @@ for r in range(MAP_SIZE):
         # 防御力の高さで色を変える
         if def_val > 500: t_icon, color = "⛰️", "#4A4A4A" # 険しい山
         elif def_val > 200: t_icon, color = "🌲", "#27AE60" # 深い森
-        elif eco_val > 40: t_icon, color = "🌾", "#F1C40F" # 豊かな平野
-        else: t_icon, color = "🍃", "#82E0AA" # 草原
+        elif eco_val > 40: t_icon, color = "🌾", "#F1A20F" # 豊かな平野
+        else: t_icon, color = "🍃", "#0634FF" # 草原
 
         special = ""
         if (r,c) == st.session_state.capitals[1]: special = "🏰A"
