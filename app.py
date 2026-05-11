@@ -3,123 +3,75 @@ import numpy as np
 import base64
 import os
 
-# --- 1. 画像をBase64に変換し、CSSで使える形式にする関数 ---
-def get_base64_image(image_path):
-    if os.path.exists(image_path):
-        with open(image_path, "rb") as img_file:
-            data = base64.b64encode(img_file.read()).decode()
+# --- 1. 絶対パスで画像を確実に読み込む関数 ---
+def get_base64_image(file_name):
+    base_path = os.path.dirname(os.path.abspath(__file__))
+    full_path = os.path.join(base_path, file_name)
+    if os.path.exists(full_path):
+        with open(full_path, "rb") as f:
+            data = base64.b64encode(f.read()).decode()
             return f"data:image/png;base64,{data}"
-    else:
-        return None
+    return None
 
-# --- 2. 地形設定と画像データの準備 ---
-TILE_CONFIG = {
+# --- 2. 設定 ---
+MAP_SIZE = 6
+TILE_DEFS = {
     "mountain": {"icon": "⛰️", "file": "mount.png"},
     "field": {"icon": "🌾", "file": "field.png"},
     "forest": {"icon": "🌲", "file": "forest.png"}
 }
 
-# --- 3. セッション状態の初期化 ---
-MAP_SIZE = 6
 if 'owner' not in st.session_state:
     st.session_state.owner = np.zeros((MAP_SIZE, MAP_SIZE), dtype=int)
     st.session_state.defense = np.random.randint(50, 201, size=(MAP_SIZE, MAP_SIZE))
     st.session_state.economy = np.random.randint(10, 51, size=(MAP_SIZE, MAP_SIZE))
     st.session_state.turn = 1
-    st.session_state.phase = "1_EXPANSION"
     st.session_state.capitals = {1: None, 2: None}
 
-# --- 4. CSS: 全体スタイルと文字色 ---
+# --- 3. サイドバー：ターン表示 & 画像チェック ---
+st.sidebar.title("🎮 SYSTEM")
+turn_emoji = "🔵" if st.session_state.turn == 1 else "🔴"
+turn_name = "Player A (青)" if st.session_state.turn == 1 else "Player B (赤)"
+
+st.sidebar.info(f"現在のターン: {turn_emoji}\n\n**{turn_name}**")
+
+st.sidebar.divider()
+st.sidebar.write("🖼️ 画像読み込みテスト:")
+for k, v in TILE_DEFS.items():
+    res = "✅ OK" if os.path.exists(os.path.join(os.path.dirname(os.path.abspath(__file__)), v['file'])) else "❌ Missing"
+    st.sidebar.write(f"{v['icon']} {v['file']}: {res}")
+
+# --- 4. メインマップ表示 ---
 st.markdown("""
 <style>
-    /* ボタンの基本形 */
     div.stButton > button {
-        width: 100% !important;
-        height: 110px !important;
-        background-size: cover !important;
-        background-position: center !important;
-        background-repeat: no-repeat !important;
-        border: 2px solid rgba(255,255,255,0.4) !important;
-        border-radius: 8px !important;
+        width: 100% !important; height: 100px !important;
+        background-size: cover !important; background-position: center !important;
+        border-radius: 10px !important; border: 1px solid white !important;
     }
-    /* 文字の視認性向上（袋文字） */
     div.stButton p {
-        color: white !important;
-        font-weight: 900 !important;
-        font-size: 16px !important;
-        text-shadow: 
-            2px 2px 0 #000, -2px -2px 0 #000,
-            2px -2px 0 #000, -2px 2px 0 #000,
-            0 2px 4px rgba(0,0,0,0.8) !important;
+        color: white !important; font-weight: 900 !important;
+        text-shadow: 2px 2px 2px black !important;
     }
-    /* プレイヤーカラー */
-    button:has(p:contains("🔵")) p { color: #3498db !important; }
-    button:has(p:contains("🔴")) p { color: #e74c3c !important; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 5. サイドバー：ターンの明示表示 ---
-st.sidebar.title("🎮 ゲーム情報")
-current_p = st.session_state.turn
-p_color = "青 (Player A)" if current_p == 1 else "赤 (Player B)"
-p_emoji = "🔵" if current_p == 1 else "🔴"
+def on_click(r, c):
+    if st.session_state.owner[r,c] == 0:
+        st.session_state.owner[r,c] = st.session_state.turn
+        st.session_state.turn = 3 - st.session_state.turn
 
-# サイドバーに現在のターンを大きく表示
-st.sidebar.subheader(f"現在のターン: {p_emoji}")
-st.sidebar.markdown(f"### **{p_color}** の行動中です")
-
-if st.sidebar.button("🔄 マップをリセット"):
-    st.session_state.clear()
-    st.rerun()
-
-# --- 6. マップ描画と個別背景CSSの適用 ---
-def get_tile_type(r, c):
-    d, e = st.session_state.defense[r,c], st.session_state.economy[r,c]
-    if d > 160: return "mountain"
-    if e > 35: return "field"
-    return "forest"
-
-def on_cell_click(r, c):
-    p = st.session_state.turn
-    if st.session_state.phase == "1_EXPANSION" and st.session_state.owner[r,c] == 0:
-        st.session_state.owner[r,c] = p
-        if st.session_state.capitals[p] is None: st.session_state.capitals[p] = (r, c)
-        st.session_state.turn = 3 - p
-        if np.all(st.session_state.owner != 0): st.session_state.phase = "2_ACTION"
-
-# マップループ
 for r in range(MAP_SIZE):
     cols = st.columns(MAP_SIZE)
     for c in range(MAP_SIZE):
-        t_type = get_tile_type(r, c)
-        config = TILE_CONFIG[t_type]
-        b_key = f"btn_{r}_{c}"
+        d, e = st.session_state.defense[r,c], st.session_state.economy[r,c]
+        t_key = "mountain" if d > 160 else "field" if e > 35 else "forest"
+        conf = TILE_DEFS[t_key]
+        img_b64 = get_base64_image(conf["file"])
         
-        # 画像をBase64で取得
-        img_b64 = get_base64_image(config["file"])
-        
+        b_key = f"b_{r}_{c}"
         if img_b64:
-            # 強力なCSSセレクタで背景を上書き
-            st.markdown(f"""
-                <style>
-                div[data-testid="column"]:nth-child({c+1}) button[key="{b_key}"] {{
-                    background-image: linear-gradient(rgba(0,0,0,0.3), rgba(0,0,0,0.3)), url("{img_b64}") !important;
-                }}
-                </style>
-            """, unsafe_allow_html=True)
-        else:
-            # 画像がない場合のデバッグ用背景色
-            bg_color = "#8b4513" if t_type == "mountain" else "#228b22" if t_type == "forest" else "#daa520"
-            st.markdown(f"<style>button[key='{b_key}'] {{ background-color: {bg_color} !important; }}</style>", unsafe_allow_html=True)
-
-        owner = st.session_state.owner[r,c]
-        p_icon = "🔵" if owner == 1 else "🔴" if owner == 2 else "⚪"
-        cap = "🏰" if (r,c) in st.session_state.capitals.values() else ""
-        label = f"{p_icon}{config['icon']}{cap}\n🛡️{st.session_state.defense[r,c]}\n💰{st.session_state.economy[r,c]}"
+            st.markdown(f'<style>button[key="{b_key}"] {{ background-image: url("{img_b64}") !important; }}</style>', unsafe_allow_html=True)
         
-        cols[c].button(label, key=b_key, on_click=on_cell_click, args=(r,c))
-
-# 画像ファイルがない場合の警告表示
-missing_files = [v["file"] for v in TILE_CONFIG.values() if not os.path.exists(v["file"])]
-if missing_files:
-    st.warning(f"以下の画像ファイルが見つかりません: {', '.join(missing_files)}")
+        owner_icon = "🔵" if st.session_state.owner[r,c] == 1 else "🔴" if st.session_state.owner[r,c] == 2 else "⚪"
+        cols[c].button(f"{owner_icon}{conf['icon']}\n🛡️{d}\n💰{e}", key=b_key, on_click=on_click, args=(r,c))
