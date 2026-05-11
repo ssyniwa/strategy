@@ -8,6 +8,14 @@ TOTAL_CELLS = MAP_SIZE * MAP_SIZE
 COST_DEFENSE_UP = 50
 DEFENSE_UP_AMOUNT = 100
 
+# 地形ごとの背景画像URL (ここを自分の画像パスに変更してください)
+IMAGES = {
+    0: "nmount.png", # 山
+    1: "nforest.png",      # 森
+    2: "nshop.png",   # 町
+    3: "nriver.png"          # 農村
+}
+
 UNITS = {
     "剣士団": {"cost": 100, "atk": 100, "icon": "⚔️"},
     "槍兵団": {"cost": 200, "atk": 200, "icon": "🔱"},
@@ -22,7 +30,6 @@ if 'phase' not in st.session_state:
     st.session_state.turn = 1
     st.session_state.owner = np.zeros((MAP_SIZE, MAP_SIZE), dtype=int)
     
-    # 地形を均等(各9マス)に配分
     terrain_types = [0]*9 + [1]*9 + [2]*9 + [3]*9
     random.shuffle(terrain_types)
     st.session_state.terrain_map = np.array(terrain_types).reshape(MAP_SIZE, MAP_SIZE)
@@ -96,7 +103,8 @@ def on_cell_click(r, c, mode=None, unit_name=None):
     elif st.session_state.phase == "2_PLACEMENT":
         if st.session_state.owner[r,c] == p:
             if mode == "部隊配置" and unit_name:
-                u_data = UNITS[unit_name]
+                u_key = unit_name.split(" (")[0] # コスト表示を除去してキーを取得
+                u_data = UNITS[u_key]
                 if st.session_state.money[p] >= u_data["cost"]:
                     st.session_state.money[p] -= u_data["cost"]
                     st.session_state.units[(r,c)] = u_data.copy()
@@ -125,20 +133,29 @@ def on_cell_click(r, c, mode=None, unit_name=None):
 st.set_page_config(layout="wide", page_title="World Tactics 6x6")
 st.markdown("""
 <style>
-    .tile-container { position: relative; width: 100%; height: 95px; margin-bottom: 6px; border-radius: 6px; overflow: hidden; }
-    .tile-bg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 1; color: white; text-shadow: 1px 1px 3px black; font-weight: bold; line-height: 1.1; text-align: center; font-size: 0.7rem; }
+    .tile-container { position: relative; width: 100%; height: 100px; margin-bottom: 8px; border-radius: 8px; overflow: hidden; border: 1px solid #444; }
+    .tile-bg { 
+        position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
+        background-size: cover; background-position: center;
+        display: flex; flex-direction: column; align-items: center; justify-content: center; 
+        z-index: 1; color: white; font-weight: bold; line-height: 1.1; text-align: center; font-size: 0.7rem; 
+    }
+    /* 文字を読みやすくするためのオーバーレイ */
+    .text-overlay {
+        background: rgba(0, 0, 0, 0.4); width: 100%; height: 100%;
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+    }
     
-    .owner-1 { border: 3px solid #3498DB !important; box-shadow: inset 0 0 10px #3498DB; }
-    .owner-2 { border: 3px solid #E74C3C !important; box-shadow: inset 0 0 10px #E74C3C; }
+    .owner-1 { border: 4px solid #3498DB !important; }
+    .owner-2 { border: 4px solid #E74C3C !important; }
     
     @keyframes pulse-border {
-        0% { box-shadow: inset 0 0 10px #FFF, 0 0 0px #FFF; }
-        50% { box-shadow: inset 0 0 20px #FFF, 0 0 15px #FFF; }
-        100% { box-shadow: inset 0 0 10px #FFF, 0 0 0px #FFF; }
+        0% { box-shadow: inset 0 0 10px #FFF; }
+        50% { box-shadow: inset 0 0 25px #FFF; }
+        100% { box-shadow: inset 0 0 10px #FFF; }
     }
-    .active-unit { animation: pulse-border 1.5s infinite; z-index: 2; border: 3px solid white !important; }
-
-    .is-selected { background-color: #F1C40F !important; color: black !important; border: 3px solid white !important; }
+    .active-unit { animation: pulse-border 1.5s infinite; z-index: 2; }
+    .is-selected { border: 4px solid #F1C40F !important; }
     .is-moved { filter: brightness(0.4) grayscale(0.8); }
 
     .tile-container div.stButton > button { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-color: transparent !important; border: none !important; color: transparent !important; z-index: 10; }
@@ -150,7 +167,6 @@ mode, selected_u = None, None
 
 if st.session_state.winner:
     st.sidebar.title("🏁 ゲーム終了")
-    st.sidebar.success(f"Player {'A' if st.session_state.winner == 1 else 'B'} の勝利！")
     if st.sidebar.button("🎮 最初からやり直す"): reset_game()
 else:
     p = st.session_state.turn
@@ -161,7 +177,14 @@ else:
         st.sidebar.info("陣地を交互に選択してください")
     elif st.session_state.phase == "2_PLACEMENT":
         mode = st.sidebar.radio("行動", ["部隊配置", "防御増強"])
-        if mode == "部隊配置": selected_u = st.sidebar.selectbox("ユニット", list(UNITS.keys()))
+        if mode == "部隊配置":
+            # コストを表示した選択肢を作成
+            unit_options = [f"{k} (${v['cost']})" for k, v in UNITS.items()]
+            selected_u = st.sidebar.selectbox("ユニットを選択", unit_options)
+        elif mode == "防御増強":
+            st.sidebar.write(f"コスト: ${COST_DEFENSE_UP}")
+            st.sidebar.write(f"上昇値: +{DEFENSE_UP_AMOUNT}")
+            
         if st.sidebar.button("配置終了"):
             if st.session_state.turn == 1: st.session_state.turn = 2
             else: st.session_state.phase = "3_INVASION"; st.session_state.turn = 1; st.session_state.moved_units = []
@@ -184,7 +207,6 @@ if st.session_state.winner:
     st.header(f"👑 Player {'A' if st.session_state.winner == 1 else 'B'} の勝利！")
 
 current_p = st.session_state.turn
-
 for r in range(MAP_SIZE):
     cols = st.columns(MAP_SIZE)
     for c in range(MAP_SIZE):
@@ -193,9 +215,9 @@ for r in range(MAP_SIZE):
         eco_val = st.session_state.economy[r,c]
         unit = st.session_state.units.get((r,c))
         t_type = st.session_state.terrain_map[r,c]
-        
-        mapping = {0: ("⛰️", "#4A4A4A"), 1: ("🌲", "#66FF00"), 2: ("🌾", "#F1750F"), 3: ("🍃", "#1053EF")}
-        t_icon, color = mapping[t_type]
+
+        t_icon = {0:"⛰️", 1:"🌲", 2:"🏙", 3:"🌊"}[t_type]
+        bg_url = IMAGES[t_type]
 
         classes = f"owner-{owner}" if owner > 0 else ""
         if st.session_state.phase == "3_INVASION" and owner == current_p and unit and (r, c) not in st.session_state.moved_units:
@@ -209,11 +231,13 @@ for r in range(MAP_SIZE):
 
         with cols[c]:
             st.markdown(f"""
-                <div class="tile-container">
-                    <div class="tile-bg {classes}" style="background-color: {color};">
-                        <div>{t_icon} {special}</div>
-                        <div style="font-size: 0.6rem;">🛡️{int(def_val)} 💰{int(eco_val)}</div>
-                        <div style="font-size: 1.1rem;">{unit['icon'] if unit else ""}</div>
+                <div class="tile-container {classes}">
+                    <div class="tile-bg" style="background-image: url('{bg_url}');">
+                        <div class="text-overlay">
+                            <div>{t_icon} {special}</div>
+                            <div style="font-size: 0.6rem;">🛡️{int(def_val)} 💰{int(eco_val)}</div>
+                            <div style="font-size: 1.2rem;">{unit['icon'] if unit else ""}</div>
+                        </div>
                     </div>
             """, unsafe_allow_html=True)
             st.button("", key=f"btn{r}{c}", on_click=on_cell_click, args=(r,c, mode, selected_u))
