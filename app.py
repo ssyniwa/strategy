@@ -4,8 +4,7 @@ import numpy as np
 # --- 1. 定数・設定 ---
 MAP_SIZE = 6
 COST_DEFENSE_UP = 50
-DEFENSE_UP_AMOUNT = 150  # 増加量をアップ
-MAX_DEFENSE_DISPLAY = 999 # 表示上の目安
+DEFENSE_UP_AMOUNT = 100
 
 UNITS = {
     "剣士団": {"cost": 100, "atk": 100, "icon": "⚔️"},
@@ -20,8 +19,9 @@ if 'phase' not in st.session_state:
     st.session_state.phase = "1_EXPANSION"
     st.session_state.turn = 1
     st.session_state.owner = np.zeros((MAP_SIZE, MAP_SIZE), dtype=int)
-    st.session_state.defense = np.random.randint(50, 201, size=(MAP_SIZE, MAP_SIZE)).astype(float)
-    st.session_state.economy = np.random.randint(10, 51, size=(MAP_SIZE, MAP_SIZE))
+    # 防御力の最大値を800に変更
+    st.session_state.defense = np.random.randint(50, 801, size=(MAP_SIZE, MAP_SIZE))
+    st.session_state.economy = np.random.randint(10, 61, size=(MAP_SIZE, MAP_SIZE))
     st.session_state.units = {}
     st.session_state.capitals = {1: None, 2: None}
     st.session_state.money = {1: 100, 2: 100}
@@ -31,6 +31,7 @@ if 'phase' not in st.session_state:
 
 # --- 3. ロジック関数 ---
 def reset_game():
+    """全セッションステートを削除してリロード"""
     for key in list(st.session_state.keys()):
         del st.session_state[key]
     st.rerun()
@@ -55,7 +56,8 @@ def handle_battle(start_pos, end_pos):
     if victory:
         st.session_state.owner[end_pos] = atk_p
         st.session_state.units[end_pos] = unit
-        st.session_state.defense[end_pos] = max(50.0, unit["atk"] // 1.5) # 占領後の防御力を高めに設定
+        # 占領後の防御力は攻撃ユニットの半分（最低50）に再設定
+        st.session_state.defense[end_pos] = max(50, unit["atk"] // 2)
         del st.session_state.units[start_pos]
         st.session_state.moved_units.append(end_pos)
         if end_pos == st.session_state.capitals[def_p]:
@@ -100,18 +102,17 @@ def on_cell_click(r, c, mode=None, unit_name=None):
                 else: handle_battle(start_pos, (r,c))
             st.session_state.selected_pos = None
 
-# --- 4. CSS (レイアウト調整) ---
+# --- 4. CSS ---
 st.set_page_config(layout="wide")
 st.markdown("""
 <style>
     .tile-container {
         position: relative;
         width: 100%;
-        height: 105px;
-        margin-bottom: 8px;
-        border-radius: 10px;
+        height: 95px;
+        margin-bottom: 6px;
+        border-radius: 6px;
         overflow: hidden;
-        border: 1px solid #444;
     }
     .tile-bg {
         position: absolute;
@@ -124,13 +125,14 @@ st.markdown("""
         color: white;
         text-shadow: 1px 1px 3px black;
         font-weight: bold;
+        line-height: 1.1;
         text-align: center;
-        transition: 0.2s;
+        font-size: 0.7rem;
     }
-    .owner-1 { border: 4px solid #3498DB !important; background-image: linear-gradient(135deg, rgba(52,152,219,0.2) 0%, transparent 100%); }
-    .owner-2 { border: 4px solid #E74C3C !important; background-image: linear-gradient(135deg, rgba(231,76,60,0.2) 0%, transparent 100%); }
-    .is-selected { background-color: #F1C40F !important; color: black !important; border: 4px solid white !important; }
-    .is-moved { filter: brightness(0.3) saturate(0.5); }
+    .owner-1 { border: 3px solid #3498DB !important; box-shadow: inset 0 0 10px #3498DB; }
+    .owner-2 { border: 3px solid #E74C3C !important; box-shadow: inset 0 0 10px #E74C3C; }
+    .is-selected { background-color: #F1C40F !important; color: black !important; border: 3px solid white !important; }
+    .is-moved { filter: brightness(0.4) grayscale(0.8); }
 
     .tile-container div.stButton > button {
         position: absolute;
@@ -139,65 +141,65 @@ st.markdown("""
         border: none !important;
         color: transparent !important;
         z-index: 10;
-        cursor: pointer;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 5. UI構築 ---
+# --- 5. サイドバーコントロール ---
+if st.session_state.winner:
+    st.sidebar.title("🏁 ゲーム終了")
+    st.sidebar.success(f"Player {'A' if st.session_state.winner == 1 else 'B'} の勝利！")
+    if st.sidebar.button("🎮 最初からやり直す", on_click=reset_game):
+        pass # reset_game内でrerunされる
+else:
+    p = st.session_state.turn
+    st.sidebar.title(f"Player {'A 🔵' if p==1 else 'B 🔴'}")
+    st.sidebar.metric("軍資金", f"${st.session_state.money[p]}")
+
+    mode, selected_u = None, None
+    if st.session_state.phase == "1_EXPANSION":
+        st.sidebar.info("陣地を交互に選択してください")
+    elif st.session_state.phase == "2_PLACEMENT":
+        mode = st.sidebar.radio("行動", ["部隊配置", "防御増強"])
+        if mode == "部隊配置": selected_u = st.sidebar.selectbox("ユニット", list(UNITS.keys()))
+        if st.sidebar.button("配置終了"):
+            if st.session_state.turn == 1: st.session_state.turn = 2
+            else: st.session_state.phase = "3_INVASION"; st.session_state.turn = 1; st.session_state.moved_units = []
+            st.rerun()
+    elif st.session_state.phase == "3_INVASION":
+        if st.sidebar.button("進軍終了"):
+            if st.session_state.turn == 1: st.session_state.turn = 2; st.session_state.moved_units = []
+            else: st.session_state.phase = "5_RESULT"
+            st.rerun()
+    elif st.session_state.phase == "5_RESULT":
+        if st.sidebar.button("次ターンへ（資金回収）"):
+            for i in [1, 2]: st.session_state.money[i] += int(np.sum(st.session_state.economy[st.session_state.owner == i]))
+            st.session_state.turn = 1; st.session_state.phase = "2_PLACEMENT"
+            st.rerun()
+
+# --- 6. メイン描画 ---
 if st.session_state.winner:
     st.balloons()
-    st.title(f"👑 Player {'A' if st.session_state.winner==1 else 'B'} の完全勝利！")
-    if st.button("🔄 ゲームをリセットして最初から遊ぶ", type="primary", use_container_width=True):
-        reset_game()
-    st.stop()
-
-# サイドバー
-p = st.session_state.turn
-st.sidebar.title(f"Player {'A 🔵' if p==1 else 'B 🔴'}")
-st.sidebar.metric("現在の軍資金", f"${st.session_state.money[p]}")
-
-mode, selected_u = None, None
-if st.session_state.phase == "1_EXPANSION":
-    st.sidebar.info("拡大フェーズ: 交互に空地を占領してください。")
-elif st.session_state.phase == "2_PLACEMENT":
-    mode = st.sidebar.radio("アクション選択", ["部隊配置", "防御増強"])
-    if mode == "部隊配置": selected_u = st.sidebar.selectbox("雇用ユニット", list(UNITS.keys()))
-    if st.sidebar.button("このフェーズを終了"):
-        if st.session_state.turn == 1: st.session_state.turn = 2
-        else: st.session_state.phase = "3_INVASION"; st.session_state.turn = 1; st.session_state.moved_units = []
-        st.rerun()
-elif st.session_state.phase == "3_INVASION":
-    if st.sidebar.button("進軍を終了"):
-        if st.session_state.turn == 1: st.session_state.turn = 2; st.session_state.moved_units = []
-        else: st.session_state.phase = "5_RESULT"
-        st.rerun()
-elif st.session_state.phase == "5_RESULT":
-    if st.sidebar.button("領地から資金を回収"):
-        for i in [1, 2]: st.session_state.money[i] += int(np.sum(st.session_state.economy[st.session_state.owner == i]))
-        st.session_state.turn = 1; st.session_state.phase = "2_PLACEMENT"
-        st.rerun()
-
-# --- マップ表示 ---
-st.title("🗺️ World Tactics: 6x6 Map")
+    st.title(f"👑 Player {'A' if st.session_state.winner == 1 else 'B'} の勝利！")
+    st.write("左メニューのボタンからリスタートできます。")
 
 for r in range(MAP_SIZE):
     cols = st.columns(MAP_SIZE)
     for c in range(MAP_SIZE):
         owner = st.session_state.owner[r,c]
-        def_val = int(st.session_state.defense[r,c])
+        def_val = st.session_state.defense[r,c]
         eco_val = st.session_state.economy[r,c]
         unit = st.session_state.units.get((r,c))
         
-        # 地形スタイル決定
-        if def_val > 400: t_icon, color = "🏰", "#2C3E50" # 要塞化
-        elif def_val > 250: t_icon, color = "⛰️", "#5D6D7E" # 堅牢
-        elif eco_val > 35: t_icon, color = "🌾", "#D4AC0D" # 豊穣
-        else: t_icon, color = "🌲", "#1E8449" # 標準
+        # 防御力の高さで色を変える
+        if def_val > 500: t_icon, color = "⛰️", "#4A4A4A" # 険しい山
+        elif def_val > 200: t_icon, color = "🌲", "#27AE60" # 深い森
+        elif eco_val > 40: t_icon, color = "🌾", "#F1C40F" # 豊かな平野
+        else: t_icon, color = "🍃", "#82E0AA" # 草原
 
         special = ""
-        if (r,c) == st.session_state.capitals[1]: special = " (HQ-A)"
-        elif (r,c) == st.session_state.capitals[2]: special = " (HQ-B)"
+        if (r,c) == st.session_state.capitals[1]: special = "🏰A"
+        elif (r,c) == st.session_state.capitals[2]: special = "🏰B"
         
         classes = f"owner-{owner}" if owner > 0 else ""
         if st.session_state.selected_pos == (r,c): classes += " is-selected"
@@ -207,9 +209,9 @@ for r in range(MAP_SIZE):
             st.markdown(f"""
                 <div class="tile-container">
                     <div class="tile-bg {classes}" style="background-color: {color};">
-                        <div style="font-size: 0.6rem; opacity: 0.9;">{t_icon}{special}</div>
-                        <div style="font-size: 0.75rem;">🛡️{def_val} 💰{eco_val}</div>
-                        <div style="font-size: 1.3rem; margin-top: 2px;">{unit['icon'] if unit else ""}</div>
+                        <div>{t_icon} {special}</div>
+                        <div style="font-size: 0.6rem;">🛡️{int(def_val)} 💰{int(eco_val)}</div>
+                        <div style="font-size: 1.1rem;">{unit['icon'] if unit else ""}</div>
                     </div>
             """, unsafe_allow_html=True)
             st.button("", key=f"btn{r}{c}", on_click=on_cell_click, args=(r,c, mode, selected_u))
