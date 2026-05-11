@@ -1,19 +1,22 @@
 import streamlit as st
 import numpy as np
 import random
-
+import base64
 # --- 1. 定数・設定 ---
 MAP_SIZE = 6
 TOTAL_CELLS = MAP_SIZE * MAP_SIZE
 COST_DEFENSE_UP = 50
 DEFENSE_UP_AMOUNT = 100
-
+def get_image_base64(path):
+    with open(path, "rb") as f:
+        data = f.read()
+    return f"data:image/png;base64,{base64.b64encode(data).decode()}"
 # 地形ごとの背景画像URL (ここを自分の画像パスに変更してください)
 IMAGES = {
-    0: "nmount.png", # 山
-    1: "nforest.png",      # 森
-    2: "nshop.png",   # 町
-    3: "nriver.png"          # 農村
+    0: get_image_base64("nmount.png"), # 山
+    1: get_image_base64("nforest.png"),      # 森
+    2: get_image_base64("nshop.png"),   # 町
+    3: get_image_base64("nriver.png")          # 農村
 }
 
 UNITS = {
