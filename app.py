@@ -29,40 +29,33 @@ if 'owner' not in st.session_state:
     st.session_state.economy = np.random.randint(10, 51, size=(MAP_SIZE, MAP_SIZE))
     st.session_state.turn = 1
 
-# --- 3. 強力なCSS（ボタンを透明化し、枠線を整える） ---
+# --- 3. 基礎CSS（全ボタンを透明化して画像を見せる準備） ---
 st.markdown("""
 <style>
-    /* ボタンが入っている外枠(div)の設定 */
-    div[data-testid="stButton"] {
-        background-size: cover !important;
-        background-position: center !important;
-        background-repeat: no-repeat !important;
-        border-radius: 10px !important;
-        overflow: hidden !important;
-    }
-
-    /* ボタンそのものを「完全に透明」にする（画像はこの下のdivに見える） */
+    /* 全てのボタンの背景を透明にし、中身の層を消す */
     div.stButton > button {
         width: 100% !important;
-        height: 110px !important;
-        background-color: rgba(0,0,0,0.2) !important; /* 少し暗くして文字を見やすく */
+        height: 100px !important;
+        background-color: transparent !important;
         background-image: none !important;
-        border: 2px solid rgba(255,255,255,0.3) !important;
-        color: white !important;
-        transition: 0.2s !important;
+        border: 2px solid rgba(255,255,255,0.4) !important;
+        border-radius: 8px !important;
+        position: relative !important;
+        z-index: 1 !important;
+    }
+    
+    /* ボタンの擬似要素（グレーの膜）を強制排除 */
+    div.stButton > button::before, div.stButton > button::after {
+        content: none !important;
+        display: none !important;
     }
 
-    /* ホバーしたときだけ少し白くする */
-    div.stButton > button:hover {
-        background-color: rgba(255,255,255,0.1) !important;
-        border-color: white !important;
-    }
-
-    /* 文字の袋文字設定 */
+    /* 文字を浮かび上がらせる */
     div.stButton p {
         color: white !important;
         font-weight: 900 !important;
-        text-shadow: 2px 2px 3px #000, -2px -2px 3px #000 !important;
+        text-shadow: 2px 2px 3px black !important;
+        z-index: 10 !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -70,7 +63,7 @@ st.markdown("""
 # --- 4. サイドバー：ターン表示 ---
 st.sidebar.title("🎮 SYSTEM")
 p_name = "Player A 🔵" if st.session_state.turn == 1 else "Player B 🔴"
-st.sidebar.success(f"現在のターン: {p_name}")
+st.sidebar.markdown(f"### 現在のターン\n## **{p_name}**")
 
 # --- 5. メインマップ描画 ---
 st.title("⚔️ $6 \\times 6$ World Tactics")
@@ -80,25 +73,31 @@ def on_click(r, c):
         st.session_state.owner[r,c] = st.session_state.turn
         st.session_state.turn = 3 - st.session_state.turn
 
+# 画像データのキャッシュ（ループ内の負荷軽減）
+images = {k: get_base64_image(v['file']) for k, v in TILE_DEFS.items()}
+
 for r in range(MAP_SIZE):
     cols = st.columns(MAP_SIZE)
     for c in range(MAP_SIZE):
         d, e = st.session_state.defense[r,c], st.session_state.economy[r,c]
         t_key = "mountain" if d > 160 else "field" if e > 35 else "forest"
         conf = TILE_DEFS[t_key]
-        img_b64 = get_base64_image(conf["file"])
+        img_b64 = images[t_key]
         
-        b_key = f"b_{r}_{c}"
+        # 🟢 セレクタを極限までシンプルに。button[key="..."] を直接叩く
+        b_key = f"btn_{r}_{c}"
         
-        # 🟢 【解決策】ボタン本体ではなく、ボタンの親要素(stButton)に画像を貼る
         if img_b64:
+            # 擬似要素ではなく、ボタン自体の背景に直接 url を流し込む
             st.markdown(f"""
                 <style>
-                div[data-testid="column"]:nth-child({c+1}) div[data-testid="stButton"]:has(button[key="{b_key}"]) {{
-                    background-image: url("{img_b64}") !important;
+                button[key="{b_key}"] {{
+                    background-image: linear-gradient(rgba(0,0,0,0.3), rgba(0,0,0,0.3)), url("{img_b64}") !important;
+                    background-size: cover !important;
+                    background-position: center !important;
                 }}
                 </style>
-                """, unsafe_allow_html=True)
+            """, unsafe_allow_html=True)
         
         owner_icon = "🔵" if st.session_state.owner[r,c] == 1 else "🔴" if st.session_state.owner[r,c] == 2 else "⚪"
         cols[c].button(f"{owner_icon}{conf['icon']}\n🛡️{d}\n💰{e}", key=b_key, on_click=on_click, args=(r,c))
