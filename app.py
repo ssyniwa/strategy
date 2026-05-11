@@ -5,23 +5,28 @@ import os
 from PIL import Image
 from io import BytesIO
 
-# --- 1. 画像を軽量化してBase64化する関数 ---
-def get_base64_image_optimized(file_name):
+# --- 1. 画像を劇的に軽量化（2.6MB -> 数KB）する関数 ---
+def get_base64_optimized(file_name):
     base_path = os.path.dirname(os.path.abspath(__file__))
     full_path = os.path.join(base_path, file_name)
     
     if os.path.exists(full_path):
         try:
+            # 画像を開く
             img = Image.open(full_path)
-            # ボタンサイズに合わせて150pxに縮小（これで十分綺麗です）
-            img = img.resize((150, 150), Image.Resampling.LANCZOS)
+            # ボタンサイズ（約100px）に合わせて120pxに縮小
+            # これによりデータ量が1/100以下になります
+            img = img.resize((120, 120), Image.LANCZOS)
             
+            # メモリ上にJPEGとして保存（PNGより軽い）
             buffered = BytesIO()
-            # JPEG形式で圧縮（quality=70で劇的に軽くなります）
-            img.convert("RGB").save(buffered, format="JPEG", quality=70)
+            img.convert("RGB").save(buffered, format="JPEG", quality=75)
+            
+            # Base64に変換
             img_str = base64.b64encode(buffered.getvalue()).decode()
             return f"data:image/jpeg;base64,{img_str}"
         except Exception as e:
+            st.error(f"Error processing {file_name}: {e}")
             return None
     return None
 
@@ -33,73 +38,59 @@ TILE_DEFS = {
     "forest": {"icon": "🌲", "file": "forest.png"}
 }
 
-if 'owner' not in st.session_state:
-    st.session_state.owner = np.zeros((MAP_SIZE, MAP_SIZE), dtype=int)
-    st.session_state.defense = np.random.randint(50, 201, size=(MAP_SIZE, MAP_SIZE))
-    st.session_state.economy = np.random.randint(10, 51, size=(MAP_SIZE, MAP_SIZE))
-    st.session_state.turn = 1
-
-# --- 3. CSS：疑似要素を画像レイヤーにする（これが一番確実） ---
+# --- 3. CSS設定 ---
 st.markdown("""
 <style>
+    /* 全てのボタンを一旦透明な土台にする */
     div.stButton > button {
         width: 100% !important;
         height: 100px !important;
-        background-color: #333 !important;
-        border: 1px solid rgba(255,255,255,0.3) !important;
+        background-color: #333 !important; /* 予備の色 */
+        border: 1px solid rgba(255,255,255,0.2) !important;
         position: relative !important;
-        z-index: 1 !important;
         overflow: hidden !important;
+        z-index: 1 !important;
     }
-
-    /* 画像を表示する専用レイヤー */
+    /* 画像を表示するレイヤー（疑似要素） */
     div.stButton > button::before {
         content: "" !important;
-        display: block !important;
         position: absolute !important;
         top: 0; left: 0; width: 100%; height: 100%;
         background-size: cover !important;
         background-position: center !important;
-        z-index: -1 !important;
+        z-index: -1 !important; /* 文字の後ろ */
     }
-
+    /* 文字の視認性向上 */
     div.stButton p {
-        position: relative !important;
-        z-index: 2 !important;
         color: white !important;
         font-weight: 900 !important;
-        text-shadow: 2px 2px 4px #000 !important;
+        text-shadow: 2px 2px 4px black !important;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 4. メイン描画 ---
-st.title("⚔️ Optimized Tactical Map")
+st.title("⚔️ Optimized Strategy Map")
 
-def on_click(r, c):
-    if st.session_state.owner[r,c] == 0:
-        st.session_state.owner[r,c] = st.session_state.turn
-        st.session_state.turn = 3 - st.session_state.turn
+# 🟢 ここで画像をリサイズ・軽量化して取得
+images = {k: get_base64_optimized(v['file']) for k, v in TILE_DEFS.items()}
 
-# 画像を最適化して事前ロード
-images = {k: get_base64_image_optimized(v['file']) for k, v in TILE_DEFS.items()}
-
+# マップ描画
 for r in range(MAP_SIZE):
     cols = st.columns(MAP_SIZE)
     for c in range(MAP_SIZE):
-        d, e = st.session_state.defense[r,c], st.session_state.economy[r,c]
-        t_key = "mountain" if d > 160 else "field" if e > 35 else "forest"
-        img_data = images[t_key]
-        b_key = f"b_{r}_{c}"
+        # 地形を適当に割り当て
+        t_type = "mountain" if (r+c) % 3 == 0 else "field" if (r+c) % 3 == 1 else "forest"
+        img_data = images[t_type]
+        b_key = f"btn_{r}_{c}"
         
+        # 🟢 短くなったBase64ならCSSが受理される
         if img_data:
             st.markdown(f"""
                 <style>
                 button[key="{b_key}"]::before {{
-                    background-image: linear-gradient(rgba(0,0,0,0.2), rgba(0,0,0,0.2)), url("{img_data}") !important;
+                    background-image: url("{img_data}") !important;
                 }}
                 </style>
             """, unsafe_allow_html=True)
         
-        owner_icon = "🔵" if st.session_state.owner[r,c] == 1 else "🔴" if st.session_state.owner[r,c] == 2 else "⚪"
-        cols[c].button(f"{owner_icon}\n🛡️{d}\n💰{e}", key=b_key, on_click=on_click, args=(r,c))
+        cols[c].button(f"{TILE_DEFS[t_type]['icon']}", key=b_key)
