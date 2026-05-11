@@ -2,22 +2,13 @@ import streamlit as st
 import numpy as np
 import random
 import base64
+import os
+
 # --- 1. 定数・設定 ---
 MAP_SIZE = 6
 TOTAL_CELLS = MAP_SIZE * MAP_SIZE
 COST_DEFENSE_UP = 50
 DEFENSE_UP_AMOUNT = 100
-def get_image_base64(path):
-    with open(path, "rb") as f:
-        data = f.read()
-    return f"data:image/png;base64,{base64.b64encode(data).decode()}"
-# 地形ごとの背景画像URL (ここを自分の画像パスに変更してください)
-IMAGES = {
-    0: get_image_base64("nmount.png"), # 山
-    1: get_image_base64("nforest.png"),      # 森
-    2: get_image_base64("nshop.png"),   # 町
-    3: get_image_base64("nriver.png")          # 農村
-}
 
 UNITS = {
     "剣士団": {"cost": 100, "atk": 100, "icon": "⚔️"},
@@ -27,15 +18,37 @@ UNITS = {
     "砲兵団": {"cost": 800, "atk": 800, "icon": "💣"},
 }
 
-# --- 2. セッション状態の初期化 ---
+# --- 2. 関数：ローカル画像をBase64に変換 ---
+def get_image_base64(path):
+    """ローカルファイルをHTML埋め込み用にエンコード"""
+    try:
+        if os.path.exists(path):
+            with open(path, "rb") as f:
+                data = f.read()
+            return f"data:image/png;base64,{base64.b64encode(data).decode()}"
+        else:
+            return "" # ファイルがない場合は空文字を返す
+    except Exception:
+        return ""
+
+# --- 3. セッション状態の初期化 ---
 if 'phase' not in st.session_state:
     st.session_state.phase = "1_EXPANSION"
     st.session_state.turn = 1
     st.session_state.owner = np.zeros((MAP_SIZE, MAP_SIZE), dtype=int)
     
+    # 地形の均等配分
     terrain_types = [0]*9 + [1]*9 + [2]*9 + [3]*9
     random.shuffle(terrain_types)
     st.session_state.terrain_map = np.array(terrain_types).reshape(MAP_SIZE, MAP_SIZE)
+    
+    # 地形画像の読み込み
+    st.session_state.images = {
+        0: get_image_base64("nmount.png"),
+        1: get_image_base64("nforest.png"),
+        2: get_image_base64("nshop.png"),
+        3: get_image_base64("nriver.png")
+    }
     
     def_map = np.zeros((MAP_SIZE, MAP_SIZE))
     eco_map = np.zeros((MAP_SIZE, MAP_SIZE))
@@ -60,7 +73,7 @@ if 'phase' not in st.session_state:
     st.session_state.moved_units = []
     st.session_state.winner = None
 
-# --- 3. ロジック関数 ---
+# --- 4. ロジック関数 ---
 def reset_game():
     for key in list(st.session_state.keys()):
         del st.session_state[key]
@@ -106,7 +119,7 @@ def on_cell_click(r, c, mode=None, unit_name=None):
     elif st.session_state.phase == "2_PLACEMENT":
         if st.session_state.owner[r,c] == p:
             if mode == "部隊配置" and unit_name:
-                u_key = unit_name.split(" (")[0] # コスト表示を除去してキーを取得
+                u_key = unit_name.split(" (")[0]
                 u_data = UNITS[u_key]
                 if st.session_state.money[p] >= u_data["cost"]:
                     st.session_state.money[p] -= u_data["cost"]
@@ -132,31 +145,18 @@ def on_cell_click(r, c, mode=None, unit_name=None):
                 else: handle_battle(start_pos, (r,c))
             st.session_state.selected_pos = None
 
-# --- 4. CSS ---
+# --- 5. CSS ---
 st.set_page_config(layout="wide", page_title="World Tactics 6x6")
 st.markdown("""
 <style>
     .tile-container { position: relative; width: 100%; height: 100px; margin-bottom: 8px; border-radius: 8px; overflow: hidden; border: 1px solid #444; }
-    .tile-bg { 
-        position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
-        background-size: cover; background-position: center;
-        display: flex; flex-direction: column; align-items: center; justify-content: center; 
-        z-index: 1; color: white; font-weight: bold; line-height: 1.1; text-align: center; font-size: 0.7rem; 
-    }
-    /* 文字を読みやすくするためのオーバーレイ */
-    .text-overlay {
-        background: rgba(0, 0, 0, 0.4); width: 100%; height: 100%;
-        display: flex; flex-direction: column; align-items: center; justify-content: center;
-    }
+    .tile-bg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-size: cover; background-position: center; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 1; color: white; font-weight: bold; line-height: 1.1; text-align: center; font-size: 0.7rem; }
+    .text-overlay { background: rgba(0, 0, 0, 0.4); width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; }
     
     .owner-1 { border: 4px solid #3498DB !important; }
     .owner-2 { border: 4px solid #E74C3C !important; }
     
-    @keyframes pulse-border {
-        0% { box-shadow: inset 0 0 10px #FFF; }
-        50% { box-shadow: inset 0 0 25px #FFF; }
-        100% { box-shadow: inset 0 0 10px #FFF; }
-    }
+    @keyframes pulse-border { 0% { box-shadow: inset 0 0 10px #FFF; } 50% { box-shadow: inset 0 0 25px #FFF; } 100% { box-shadow: inset 0 0 10px #FFF; } }
     .active-unit { animation: pulse-border 1.5s infinite; z-index: 2; }
     .is-selected { border: 4px solid #F1C40F !important; }
     .is-moved { filter: brightness(0.4) grayscale(0.8); }
@@ -165,7 +165,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- 5. サイドバーコントロール ---
+# --- 6. サイドバーコントロール ---
 mode, selected_u = None, None
 
 if st.session_state.winner:
@@ -181,7 +181,6 @@ else:
     elif st.session_state.phase == "2_PLACEMENT":
         mode = st.sidebar.radio("行動", ["部隊配置", "防御増強"])
         if mode == "部隊配置":
-            # コストを表示した選択肢を作成
             unit_options = [f"{k} (${v['cost']})" for k, v in UNITS.items()]
             selected_u = st.sidebar.selectbox("ユニットを選択", unit_options)
         elif mode == "防御増強":
@@ -203,7 +202,7 @@ else:
             st.session_state.turn = 1; st.session_state.phase = "2_PLACEMENT"
             st.rerun()
 
-# --- 6. メイン描画 ---
+# --- 7. メイン描画 ---
 st.title("🗺️ World Tactics 6x6")
 if st.session_state.winner:
     st.balloons()
@@ -219,8 +218,9 @@ for r in range(MAP_SIZE):
         unit = st.session_state.units.get((r,c))
         t_type = st.session_state.terrain_map[r,c]
 
+        # 地形アイコン
         t_icon = {0:"⛰️", 1:"🌲", 2:"🏙️", 3:"🌊"}[t_type]
-        bg_url = IMAGES[t_type]
+        bg_url = st.session_state.images[t_type]
 
         classes = f"owner-{owner}" if owner > 0 else ""
         if st.session_state.phase == "3_INVASION" and owner == current_p and unit and (r, c) not in st.session_state.moved_units:
