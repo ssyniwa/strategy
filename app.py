@@ -16,7 +16,6 @@ def get_base64_image(file_name):
 # --- 2. CSS：レイアウトと透明ボタンの制御 ---
 st.markdown("""
 <style>
-    /* タイル全体の親コンテナ */
     .tile-container {
         position: relative;
         width: 100%;
@@ -27,7 +26,6 @@ st.markdown("""
         border: 2px solid #444;
     }
     
-    /* 背景画像とステータスのレイヤー */
     .tile-visual {
         position: absolute;
         top: 0; left: 0; width: 100%; height: 100%;
@@ -41,7 +39,6 @@ st.markdown("""
         transition: 0.3s;
     }
 
-    /* 所有者カラーオーバーレイ */
     .owner-1 { box-shadow: inset 0 0 20px #3b82f6; border: 2px solid #3b82f6 !important; }
     .owner-2 { box-shadow: inset 0 0 20px #ef4444; border: 2px solid #ef4444 !important; }
     .is-moved { filter: grayscale(0.8) brightness(0.5); }
@@ -56,7 +53,6 @@ st.markdown("""
         font-size: 0.7rem; font-weight: bold; margin-top: 3px;
     }
 
-    /* 透明ボタン：これを最前面に被せる */
     .tile-container div.stButton > button {
         position: absolute;
         top: 0; left: 0; width: 100%; height: 100%;
@@ -66,13 +62,10 @@ st.markdown("""
         z-index: 10;
         cursor: pointer;
     }
-    .tile-container div.stButton > button:hover {
-        background-color: rgba(255,255,255,0.1) !important;
-    }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 3. データと初期化 ---
+# --- 3. ユニットデータ ---
 UNITS = {
     "剣士団": {"cost": 100, "atk": 110, "icon": "⚔️"},
     "槍兵団": {"cost": 200, "atk": 220, "icon": "🔱"},
@@ -82,9 +75,10 @@ UNITS = {
 }
 MAP_SIZE = 6
 
+# --- 4. ゲーム状態の初期化 ---
 if 'owner' not in st.session_state:
     st.session_state.owner = np.zeros((MAP_SIZE, MAP_SIZE), dtype=int)
-    st.session_state.terrain = np.random.choice([0, 1, 2], size=(MAP_SIZE, MAP_SIZE)) # 0:平野, 1:森林, 2:山
+    st.session_state.terrain = np.random.choice([0, 1, 2], size=(MAP_SIZE, MAP_SIZE)) 
     st.session_state.defense = np.zeros((MAP_SIZE, MAP_SIZE))
     st.session_state.economy = np.zeros((MAP_SIZE, MAP_SIZE))
     
@@ -102,12 +96,12 @@ if 'owner' not in st.session_state:
     st.session_state.moved = np.zeros((MAP_SIZE, MAP_SIZE), dtype=bool)
     st.session_state.capitals = {1: None, 2: None}
     st.session_state.gold = {1: 500, 2: 500}
-    st.session_state.turn = 1
+    st.session_state.turn = 1 # 1=Player A, 2=Player B
     st.session_state.phase = "拡大"
     st.session_state.winner = None
     st.session_state.selected = None
 
-# --- 4. ロジック関数 ---
+# --- 5. ロジック関数 ---
 def handle_click(r, c):
     p, phase = st.session_state.turn, st.session_state.phase
     owner = st.session_state.owner[r, c]
@@ -134,45 +128,58 @@ def handle_click(r, c):
             sr, sc = st.session_state.selected
             if abs(sr - r) <= 1 and abs(sc - c) <= 1 and not (sr == r and sc == c):
                 atk_u = st.session_state.unit_type[sr, sc]
-                if owner != p:
+                if owner != p: # 攻撃
                     if (UNITS[atk_u]["atk"] + np.random.randint(0, 80)) > st.session_state.defense[r, c]:
                         if (r, c) == st.session_state.capitals[3-p]: st.session_state.winner = p
                         st.session_state.owner[r, c], st.session_state.unit_type[r, c] = p, atk_u
                         st.session_state.unit_type[sr, sc] = None
-                elif st.session_state.unit_type[r, c] is None:
+                        st.session_state.moved[r, c] = True
+                elif st.session_state.unit_type[r, c] is None: # 移動
                     st.session_state.unit_type[r, c], st.session_state.unit_type[sr, sc] = atk_u, None
-                st.session_state.moved[r, c] = True
+                    st.session_state.moved[r, c] = True
             st.session_state.selected = None
 
-# --- 5. メインUI ---
+# --- 6. UIメイン ---
 if st.session_state.winner:
     st.balloons()
     st.title(f"👑 Player {'A' if st.session_state.winner==1 else 'B'} 勝利！")
-    if st.button("リスタート"): st.session_state.clear(); st.rerun()
+    if st.button("再挑戦"): st.session_state.clear(); st.rerun()
 else:
     p = st.session_state.turn
-    st.subheader(f"Player {'A' if p==1 else 'B'} | {st.session_state.phase}フェーズ | {st.session_state.gold[p]}G")
-
-    c1, c2 = st.columns([2, 1])
-    with c1:
-        if st.session_state.phase == "配置":
-            st.session_state.buying_unit = st.selectbox("雇用:", list(UNITS.keys()))
-    with c2:
-        if st.button(f"➔ {st.session_state.phase}終了"):
-            if st.session_state.phase == "拡大": st.session_state.phase = "配置"
-            elif st.session_state.phase == "配置": st.session_state.phase = "侵攻"
-            else:
-                st.session_state.gold[p] += int(st.session_state.economy[st.session_state.owner == p].sum())
+    st.subheader(f"現在の手番: Player {'A' if p==1 else 'B'} (青)" if p==1 else f"現在の手番: Player {'B' if p==2 else 'A'} (赤)")
+    
+    col1, col2, col3 = st.columns(3)
+    col1.metric("所持金", f"{st.session_state.gold[p]}G")
+    col2.metric("フェーズ", st.session_state.phase)
+    
+    # ターン/フェーズ切り替えボタン
+    with col3:
+        if st.button(f"➔ {st.session_state.phase}フェーズを終了"):
+            if st.session_state.phase == "拡大":
+                st.session_state.phase = "配置"
+            elif st.session_state.phase == "配置":
+                st.session_state.phase = "侵攻"
+            else: # 侵攻終了 = ターン交代
+                # 収入計算
+                income = int(st.session_state.economy[st.session_state.owner == p].sum())
+                st.session_state.gold[p] += income
+                # 状態リセット
                 st.session_state.moved.fill(False)
+                st.session_state.selected = None
+                # プレイヤー交代
                 st.session_state.turn = 3 - p
+                # 首都の有無で次ターンの開始フェーズを決定
                 st.session_state.phase = "配置" if st.session_state.capitals[st.session_state.turn] else "拡大"
             st.rerun()
 
-    # 画像アセットの準備
+    if st.session_state.phase == "配置":
+        st.session_state.buying_unit = st.selectbox("雇用ユニット選択", list(UNITS.keys()))
+
+    # 地形画像準備
     imgs = {0: get_base64_image("field.png"), 1: get_base64_image("forest.png"), 2: get_base64_image("mount.png")}
     icons = {0: "🌾", 1: "🌲", 2: "⛰️"}
 
-    # マップ描画
+    # マップレンダリング
     for r in range(MAP_SIZE):
         cols = st.columns(MAP_SIZE)
         for c in range(MAP_SIZE):
@@ -186,7 +193,6 @@ else:
             if (r, c) == st.session_state.selected: style_class += " is-selected"
 
             with cols[c]:
-                # コンテナ内に背景HTMLとボタンを密着させる
                 st.markdown(f'''
                     <div class="tile-container">
                         <div class="tile-visual {style_class}" style="background-image: url('{imgs[t_type]}');">
@@ -200,7 +206,5 @@ else:
                         </div>
                 ''', unsafe_allow_html=True)
                 
-                # この透明ボタンが「tile-container」の中で絶対配置される
                 st.button("", key=f"btn_{r}_{c}", on_click=handle_click, args=(r, c))
-                
                 st.markdown('</div>', unsafe_allow_html=True)
