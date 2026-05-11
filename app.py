@@ -182,7 +182,10 @@ if st.session_state.winner:
     st.balloons()
     st.title(f"👑 Player {'A' if st.session_state.winner == 1 else 'B'} の勝利！")
     st.write("左メニューのボタンからリスタートできます。")
-
+if 'mode' not in locals():
+    mode = None
+if 'selected_u' not in locals():
+    selected_u = None
 for r in range(MAP_SIZE):
     cols = st.columns(MAP_SIZE)
     for c in range(MAP_SIZE):
