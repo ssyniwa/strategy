@@ -8,7 +8,7 @@ def get_base64_image(image_path):
     if os.path.exists(image_path):
         with open(image_path, "rb") as img_file:
             data = base64.b64encode(img_file.read()).decode()
-            return f"data:png;base64,{data}"
+            return f"data:image/png;base64,{data}"
     else:
         return None
 
