@@ -3,7 +3,7 @@ import numpy as np
 import base64
 import os
 
-# --- 1. 画像読み込み（MIMEタイプ対応） ---
+# --- 1. 画像読み込み関数 ---
 def get_base64_image(file_name):
     base_path = os.path.dirname(os.path.abspath(__file__))
     full_path = os.path.join(base_path, file_name)
@@ -15,7 +15,7 @@ def get_base64_image(file_name):
             return f"data:{mime};base64,{data}"
     return None
 
-# --- 2. 設定とセッション初期化 ---
+# --- 2. 初期設定 ---
 MAP_SIZE = 6
 TILE_DEFS = {
     "mountain": {"icon": "⛰️", "file": "mount.png"},
@@ -29,38 +29,48 @@ if 'owner' not in st.session_state:
     st.session_state.economy = np.random.randint(10, 51, size=(MAP_SIZE, MAP_SIZE))
     st.session_state.turn = 1
 
-# --- 3. グローバルCSS（ボタンの共通設定） ---
+# --- 3. 強力なCSS（ボタンを透明化し、枠線を整える） ---
 st.markdown("""
 <style>
-    /* ボタンの標準色を完全に排除し、枠線とサイズを固定 */
-    div.stButton > button {
-        width: 100% !important;
-        height: 100px !important;
-        background-color: transparent !important;
+    /* ボタンが入っている外枠(div)の設定 */
+    div[data-testid="stButton"] {
         background-size: cover !important;
         background-position: center !important;
-        border: 2px solid rgba(255,255,255,0.4) !important;
-        border-radius: 8px !important;
-        padding: 0 !important;
+        background-repeat: no-repeat !important;
+        border-radius: 10px !important;
+        overflow: hidden !important;
     }
-    /* ボタン内部の疑似要素（グレーの膜）を強制削除 */
-    div.stButton > button::before {
-        content: none !important;
-        display: none !important;
+
+    /* ボタンそのものを「完全に透明」にする（画像はこの下のdivに見える） */
+    div.stButton > button {
+        width: 100% !important;
+        height: 110px !important;
+        background-color: rgba(0,0,0,0.2) !important; /* 少し暗くして文字を見やすく */
+        background-image: none !important;
+        border: 2px solid rgba(255,255,255,0.3) !important;
+        color: white !important;
+        transition: 0.2s !important;
     }
-    /* 文字の視認性向上 */
+
+    /* ホバーしたときだけ少し白くする */
+    div.stButton > button:hover {
+        background-color: rgba(255,255,255,0.1) !important;
+        border-color: white !important;
+    }
+
+    /* 文字の袋文字設定 */
     div.stButton p {
         color: white !important;
         font-weight: 900 !important;
-        text-shadow: 2px 2px 3px black, -1px -1px 3px black !important;
+        text-shadow: 2px 2px 3px #000, -2px -2px 3px #000 !important;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 4. サイドバー（ターン表示） ---
+# --- 4. サイドバー：ターン表示 ---
 st.sidebar.title("🎮 SYSTEM")
-turn_mark = "🔵 Player A" if st.session_state.turn == 1 else "🔴 Player B"
-st.sidebar.subheader(f"現在：{turn_mark}")
+p_name = "Player A 🔵" if st.session_state.turn == 1 else "Player B 🔴"
+st.sidebar.success(f"現在のターン: {p_name}")
 
 # --- 5. メインマップ描画 ---
 st.title("⚔️ $6 \\times 6$ World Tactics")
@@ -70,26 +80,22 @@ def on_click(r, c):
         st.session_state.owner[r,c] = st.session_state.turn
         st.session_state.turn = 3 - st.session_state.turn
 
-# マップ生成
 for r in range(MAP_SIZE):
     cols = st.columns(MAP_SIZE)
     for c in range(MAP_SIZE):
-        # 地形判定
         d, e = st.session_state.defense[r,c], st.session_state.economy[r,c]
         t_key = "mountain" if d > 160 else "field" if e > 35 else "forest"
         conf = TILE_DEFS[t_key]
-        
-        # 個別キーの設定
-        b_key = f"tile_{r}_{c}"
         img_b64 = get_base64_image(conf["file"])
         
-        # 🟢 ここが最終回答：セレクタを極限まで具体化
+        b_key = f"b_{r}_{c}"
+        
+        # 🟢 【解決策】ボタン本体ではなく、ボタンの親要素(stButton)に画像を貼る
         if img_b64:
             st.markdown(f"""
                 <style>
-                /* data-testidを利用して特定のボタンのみを狙い撃ち */
-                div[data-testid="column"]:nth-child({c+1}) button[key="{b_key}"] {{
-                    background-image: linear-gradient(rgba(0,0,0,0.2), rgba(0,0,0,0.2)), url("{img_b64}") !important;
+                div[data-testid="column"]:nth-child({c+1}) div[data-testid="stButton"]:has(button[key="{b_key}"]) {{
+                    background-image: url("{img_b64}") !important;
                 }}
                 </style>
                 """, unsafe_allow_html=True)
