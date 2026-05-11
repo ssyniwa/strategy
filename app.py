@@ -1,8 +1,10 @@
 import streamlit as st
 import numpy as np
+import random
 
 # --- 1. 定数・設定 ---
 MAP_SIZE = 6
+TOTAL_CELLS = MAP_SIZE * MAP_SIZE
 COST_DEFENSE_UP = 50
 DEFENSE_UP_AMOUNT = 100
 
@@ -19,9 +21,31 @@ if 'phase' not in st.session_state:
     st.session_state.phase = "1_EXPANSION"
     st.session_state.turn = 1
     st.session_state.owner = np.zeros((MAP_SIZE, MAP_SIZE), dtype=int)
-    # 防御力の最大値を800に変更
-    st.session_state.defense = np.random.randint(50, 801, size=(MAP_SIZE, MAP_SIZE))
-    st.session_state.economy = np.random.randint(10, 61, size=(MAP_SIZE, MAP_SIZE))
+    
+    # --- 地形を同数ずつ(各9マス)作成してシャッフル ---
+    # 0: 山, 1: 森, 2: 平野, 3: 草原
+    terrain_types = [0]*9 + [1]*9 + [2]*9 + [3]*9
+    random.shuffle(terrain_types)
+    st.session_state.terrain_map = np.array(terrain_types).reshape(MAP_SIZE, MAP_SIZE)
+    
+    # 地形タイプに応じたステータス割り当て
+    def_map = np.zeros((MAP_SIZE, MAP_SIZE))
+    eco_map = np.zeros((MAP_SIZE, MAP_SIZE))
+    
+    for r in range(MAP_SIZE):
+        for c in range(MAP_SIZE):
+            t = st.session_state.terrain_map[r, c]
+            if t == 0: # 山
+                def_map[r,c] = np.random.randint(500, 801); eco_map[r,c] = np.random.randint(5, 15)
+            elif t == 1: # 森
+                def_map[r,c] = np.random.randint(201, 500); eco_map[r,c] = np.random.randint(15, 30)
+            elif t == 2: # 平野
+                def_map[r,c] = np.random.randint(100, 200); eco_map[r,c] = np.random.randint(40, 61)
+            else: # 草原
+                def_map[r,c] = np.random.randint(50, 150); eco_map[r,c] = np.random.randint(30, 45)
+                
+    st.session_state.defense = def_map
+    st.session_state.economy = eco_map
     st.session_state.units = {}
     st.session_state.capitals = {1: None, 2: None}
     st.session_state.money = {1: 100, 2: 100}
@@ -31,7 +55,6 @@ if 'phase' not in st.session_state:
 
 # --- 3. ロジック関数 ---
 def reset_game():
-    """全セッションステートを削除してリロード"""
     for key in list(st.session_state.keys()):
         del st.session_state[key]
     st.rerun()
@@ -56,7 +79,6 @@ def handle_battle(start_pos, end_pos):
     if victory:
         st.session_state.owner[end_pos] = atk_p
         st.session_state.units[end_pos] = unit
-        # 占領後の防御力は攻撃ユニットの半分（最低50）に再設定
         st.session_state.defense[end_pos] = max(50, unit["atk"] // 2)
         del st.session_state.units[start_pos]
         st.session_state.moved_units.append(end_pos)
@@ -66,14 +88,12 @@ def handle_battle(start_pos, end_pos):
 def on_cell_click(r, c, mode=None, unit_name=None):
     if st.session_state.winner: return
     p = st.session_state.turn
-    
     if st.session_state.phase == "1_EXPANSION":
         if st.session_state.owner[r,c] == 0:
             st.session_state.owner[r,c] = p
             if st.session_state.capitals[p] is None: st.session_state.capitals[p] = (r, c)
             if np.all(st.session_state.owner != 0): st.session_state.phase = "2_PLACEMENT"
             st.session_state.turn = 3 - p
-            
     elif st.session_state.phase == "2_PLACEMENT":
         if st.session_state.owner[r,c] == p:
             if mode == "部隊配置" and unit_name:
@@ -85,7 +105,6 @@ def on_cell_click(r, c, mode=None, unit_name=None):
                 if st.session_state.money[p] >= COST_DEFENSE_UP:
                     st.session_state.money[p] -= COST_DEFENSE_UP
                     st.session_state.defense[r,c] += DEFENSE_UP_AMOUNT
-                    
     elif st.session_state.phase == "3_INVASION":
         if (r, c) in st.session_state.moved_units: return
         if st.session_state.selected_pos is None:
@@ -106,57 +125,26 @@ def on_cell_click(r, c, mode=None, unit_name=None):
 st.set_page_config(layout="wide")
 st.markdown("""
 <style>
-    .tile-container {
-        position: relative;
-        width: 100%;
-        height: 95px;
-        margin-bottom: 6px;
-        border-radius: 6px;
-        overflow: hidden;
-    }
-    .tile-bg {
-        position: absolute;
-        top: 0; left: 0; width: 100%; height: 100%;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        z-index: 1;
-        color: white;
-        text-shadow: 1px 1px 3px black;
-        font-weight: bold;
-        line-height: 1.1;
-        text-align: center;
-        font-size: 0.7rem;
-    }
+    .tile-container { position: relative; width: 100%; height: 95px; margin-bottom: 6px; border-radius: 6px; overflow: hidden; }
+    .tile-bg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 1; color: white; text-shadow: 1px 1px 3px black; font-weight: bold; line-height: 1.1; text-align: center; font-size: 0.7rem; }
     .owner-1 { border: 3px solid #3498DB !important; box-shadow: inset 0 0 10px #3498DB; }
     .owner-2 { border: 3px solid #E74C3C !important; box-shadow: inset 0 0 10px #E74C3C; }
     .is-selected { background-color: #F1C40F !important; color: black !important; border: 3px solid white !important; }
     .is-moved { filter: brightness(0.4) grayscale(0.8); }
-
-    .tile-container div.stButton > button {
-        position: absolute;
-        top: 0; left: 0; width: 100%; height: 100%;
-        background-color: transparent !important;
-        border: none !important;
-        color: transparent !important;
-        z-index: 10;
-    }
+    .tile-container div.stButton > button { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-color: transparent !important; border: none !important; color: transparent !important; z-index: 10; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 5. サイドバーコントロール ---
+# --- 5. サイドバー (変数定義の漏れを防ぐ) ---
+mode, selected_u = None, None
+
 if st.session_state.winner:
     st.sidebar.title("🏁 ゲーム終了")
-    st.sidebar.success(f"Player {'A' if st.session_state.winner == 1 else 'B'} の勝利！")
-    if st.sidebar.button("🎮 最初からやり直す", on_click=reset_game):
-        pass # reset_game内でrerunされる
+    if st.sidebar.button("🎮 最初からやり直す"): reset_game()
 else:
     p = st.session_state.turn
     st.sidebar.title(f"Player {'A 🔵' if p==1 else 'B 🔴'}")
     st.sidebar.metric("軍資金", f"${st.session_state.money[p]}")
-
-    mode, selected_u = None, None
     if st.session_state.phase == "1_EXPANSION":
         st.sidebar.info("陣地を交互に選択してください")
     elif st.session_state.phase == "2_PLACEMENT":
@@ -181,11 +169,7 @@ else:
 if st.session_state.winner:
     st.balloons()
     st.title(f"👑 Player {'A' if st.session_state.winner == 1 else 'B'} の勝利！")
-    st.write("左メニューのボタンからリスタートできます。")
-if 'mode' not in locals():
-    mode = None
-if 'selected_u' not in locals():
-    selected_u = None
+
 for r in range(MAP_SIZE):
     cols = st.columns(MAP_SIZE)
     for c in range(MAP_SIZE):
@@ -193,12 +177,16 @@ for r in range(MAP_SIZE):
         def_val = st.session_state.defense[r,c]
         eco_val = st.session_state.economy[r,c]
         unit = st.session_state.units.get((r,c))
+        t_type = st.session_state.terrain_map[r,c]
         
-        # 防御力の高さで色を変える
-        if def_val > 500: t_icon, color = "⛰️", "#4A4A4A" # 険しい山
-        elif def_val > 200: t_icon, color = "🌲", "#78AE27" # 深い森
-        elif eco_val > 40: t_icon, color = "🌾", "#F1A20F" # 豊かな平野
-        else: t_icon, color = "🍃", "#0634FF" # 草原
+        # 地形タイプに応じたアイコンと色の固定
+        mapping = {
+            0: ("⛰️", "#4A4A4A"), # 山
+            1: ("🌲", "#3C08F9"), # 森
+            2: ("🌾", "#F18B0F"), # 平野
+            3: ("🍃", "#24EE16"), # 草原
+        }
+        t_icon, color = mapping[t_type]
 
         special = ""
         if (r,c) == st.session_state.capitals[1]: special = "🏰A"
@@ -209,13 +197,10 @@ for r in range(MAP_SIZE):
         if (r,c) in st.session_state.moved_units: classes += " is-moved"
 
         with cols[c]:
-            st.markdown(f"""
-                <div class="tile-container">
-                    <div class="tile-bg {classes}" style="background-color: {color};">
-                        <div>{t_icon} {special}</div>
-                        <div style="font-size: 0.6rem;">🛡️{int(def_val)} 💰{int(eco_val)}</div>
-                        <div style="font-size: 1.1rem;">{unit['icon'] if unit else ""}</div>
-                    </div>
-            """, unsafe_allow_html=True)
+            st.markdown(f"""<div class="tile-container"><div class="tile-bg {classes}" style="background-color: {color};">
+                <div>{t_icon} {special}</div>
+                <div style="font-size: 0.6rem;">🛡️{int(def_val)} 💰{int(eco_val)}</div>
+                <div style="font-size: 1.1rem;">{unit['icon'] if unit else ""}</div>
+                </div>""", unsafe_allow_html=True)
             st.button("", key=f"btn{r}{c}", on_click=on_cell_click, args=(r,c, mode, selected_u))
             st.markdown("</div>", unsafe_allow_html=True)
